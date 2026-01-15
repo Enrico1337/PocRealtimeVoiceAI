@@ -52,13 +52,18 @@ def get_ice_servers() -> list:
     """Build ICE server list from settings."""
     servers = [
         RTCIceServer(urls="stun:stun.l.google.com:19302"),
-        RTCIceServer(urls="stun:stun.relay.metered.ca:80"),
     ]
     if settings and settings.turn_username and settings.turn_credential:
-        # Add multiple TURN server configurations for better connectivity
+        # Metered.ca TURN servers - exact URLs from dashboard
         servers.extend([
+            RTCIceServer(urls="stun:stun.relay.metered.ca:80"),
             RTCIceServer(
                 urls="turn:global.relay.metered.ca:80",
+                username=settings.turn_username,
+                credential=settings.turn_credential,
+            ),
+            RTCIceServer(
+                urls="turn:global.relay.metered.ca:80?transport=tcp",
                 username=settings.turn_username,
                 credential=settings.turn_credential,
             ),
@@ -68,7 +73,7 @@ def get_ice_servers() -> list:
                 credential=settings.turn_credential,
             ),
             RTCIceServer(
-                urls=settings.turn_server_url,
+                urls="turns:global.relay.metered.ca:443?transport=tcp",
                 username=settings.turn_username,
                 credential=settings.turn_credential,
             ),
@@ -80,12 +85,18 @@ def get_ice_servers_for_client() -> list:
     """Get ICE servers in format suitable for JavaScript client."""
     servers = [
         {"urls": "stun:stun.l.google.com:19302"},
-        {"urls": "stun:stun.relay.metered.ca:80"},
     ]
     if settings and settings.turn_username and settings.turn_credential:
+        # Metered.ca TURN servers - exact URLs from dashboard
         servers.extend([
+            {"urls": "stun:stun.relay.metered.ca:80"},
             {
                 "urls": "turn:global.relay.metered.ca:80",
+                "username": settings.turn_username,
+                "credential": settings.turn_credential,
+            },
+            {
+                "urls": "turn:global.relay.metered.ca:80?transport=tcp",
                 "username": settings.turn_username,
                 "credential": settings.turn_credential,
             },
@@ -95,7 +106,7 @@ def get_ice_servers_for_client() -> list:
                 "credential": settings.turn_credential,
             },
             {
-                "urls": settings.turn_server_url,
+                "urls": "turns:global.relay.metered.ca:443?transport=tcp",
                 "username": settings.turn_username,
                 "credential": settings.turn_credential,
             },
