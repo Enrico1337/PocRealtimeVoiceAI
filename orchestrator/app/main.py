@@ -31,7 +31,7 @@ from pipecat.transports.smallwebrtc.request_handler import (
 )
 from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
 from aiortc import RTCIceServer
-from pipecat.services.tts import TTSService
+from pipecat.services.tts_service import TTSService
 from pipecat.frames.frames import TextFrame, Frame, EndFrame
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
