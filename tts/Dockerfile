@@ -9,6 +9,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
+# Avoid interactive prompts (tzdata etc.)
+ENV DEBIAN_FRONTEND=noninteractive \
+    TZ=Etc/UTC
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tzdata \
