@@ -156,3 +156,15 @@ services:
       timeout: 5s
       retries: 5
       start_period: 60s
+
+  # =============================================================================
+  # TEST - Quick import validation (no GPU needed)
+  # Usage: docker-compose run --rm test
+  # =============================================================================
+  test:
+    build:
+      context: ./orchestrator
+      dockerfile: Dockerfile
+    container_name: poc-test
+    command: ["python", "test_imports.py"]
+    profiles: ["test"]

@@ -30,6 +30,9 @@ RUN pip install --upgrade pip && \
 # Copy application code
 COPY app/ ./app/
 
+# Copy test script
+COPY test_imports.py .
+
 # Create directory for knowledge base (will be mounted)
 RUN mkdir -p /app/kb
 
