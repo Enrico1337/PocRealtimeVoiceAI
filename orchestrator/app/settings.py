@@ -65,12 +65,12 @@ class Settings(BaseSettings):
         description="TURN server URL"
     )
     turn_username: str = Field(
-        default="e86cf6de4f5f9adc46f5a648",
-        description="TURN server username"
+        default="",
+        description="TURN server username (set via .env)"
     )
     turn_credential: str = Field(
-        default="2D9tqNMVS+IjOECB",
-        description="TURN server credential"
+        default="",
+        description="TURN server credential (set via .env)"
     )
 
     # =========================================================================
