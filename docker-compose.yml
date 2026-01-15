@@ -136,8 +136,8 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       # WebRTC / TURN server config (set via .env or environment)
       - TURN_SERVER_URL=${TURN_SERVER_URL:-turn:global.relay.metered.ca:443?transport=tcp}
-      - TURN_USERNAME=${TURN_USERNAME:-}
-      - TURN_CREDENTIAL=${TURN_CREDENTIAL:-}
+      - TURN_USERNAME=${TURN_USERNAME:-e86cf6de4f5f9adc46f5a648}
+      - TURN_CREDENTIAL=${TURN_CREDENTIAL:-2D9tqNMVS+IjOECB}
     volumes:
       - ./kb:/app/kb:ro
       - hf-cache:/root/.cache/huggingface
