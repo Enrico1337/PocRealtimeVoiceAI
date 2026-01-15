@@ -22,7 +22,8 @@ from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
 from pipecat.services.openai import OpenAILLMService
 from pipecat.transports.network.small_webrtc import SmallWebRTCTransport
-from pipecat.transports.network.webrtc_connection import SmallWebRTCConnection
+from pipecat.transports.smallwebrtc.request_handler import SmallWebRTCRequestHandler
+from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
 from pipecat.serializers.protobuf import ProtobufFrameSerializer
 from pipecat.services.ai_services import TTSService
 from pipecat.frames.frames import TTSSpeakFrame, TextFrame, Frame, EndFrame
@@ -38,6 +39,7 @@ logger = logging.getLogger(__name__)
 # Global instances
 rag_service: Optional[RAGService] = None
 settings: Optional[Settings] = None
+webrtc_handler = SmallWebRTCRequestHandler()
 
 
 class HTTPTTSService(TTSService):
@@ -302,17 +304,17 @@ async def webrtc_offer(request: Request):
         if not sdp:
             raise HTTPException(status_code=400, detail="Missing SDP")
 
-        # Create WebRTC connection
-        connection = SmallWebRTCConnection()
-        answer = await connection.create_answer(sdp, sdp_type)
+        async def on_connection(connection: SmallWebRTCConnection):
+            """Callback when WebRTC connection is established."""
+            await run_bot(connection)
 
-        # Start the bot pipeline in background
-        asyncio.create_task(run_bot(connection))
+        answer = await webrtc_handler.offer(
+            sdp=sdp,
+            type=sdp_type,
+            on_connection=on_connection
+        )
 
-        return JSONResponse({
-            "sdp": answer["sdp"],
-            "type": answer["type"]
-        })
+        return JSONResponse(answer)
 
     except Exception as e:
         logger.error(f"WebRTC offer error: {e}", exc_info=True)
