@@ -22,6 +22,7 @@ from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
 from pipecat.services.openai import OpenAILLMService
 from pipecat.transports.network.small_webrtc import SmallWebRTCTransport
+from pipecat.transports.base_transport import TransportParams
 from pipecat.transports.smallwebrtc.request_handler import (
     SmallWebRTCRequestHandler,
     SmallWebRTCRequest,
@@ -162,16 +163,15 @@ async def run_bot(webrtc_connection: SmallWebRTCConnection) -> None:
         # Create transport
         transport = SmallWebRTCTransport(
             webrtc_connection=webrtc_connection,
-            params=SmallWebRTCTransport.InputParams(
+            params=TransportParams(
                 audio_in_enabled=True,
                 audio_out_enabled=True,
-                vad_enabled=True,
                 vad_analyzer=SileroVADAnalyzer(
                     params=SileroVADAnalyzer.VADParams(
                         min_silence_duration_ms=settings.vad_silence_ms,
                     )
                 ),
-                vad_audio_passthrough=True,
+                audio_in_passthrough=True,
             )
         )
 
