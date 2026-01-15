@@ -16,6 +16,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from pipecat.audio.vad.silero import SileroVADAnalyzer
+from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
@@ -167,8 +168,8 @@ async def run_bot(webrtc_connection: SmallWebRTCConnection) -> None:
                 audio_in_enabled=True,
                 audio_out_enabled=True,
                 vad_analyzer=SileroVADAnalyzer(
-                    params=SileroVADAnalyzer.VADParams(
-                        min_silence_duration_ms=settings.vad_silence_ms,
+                    params=VADParams(
+                        stop_secs=settings.vad_silence_ms / 1000.0,
                     )
                 ),
                 audio_in_passthrough=True,
