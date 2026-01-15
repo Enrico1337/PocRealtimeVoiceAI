@@ -49,69 +49,57 @@ webrtc_handler: Optional[SmallWebRTCRequestHandler] = None
 
 
 def get_ice_servers() -> list:
-    """Build ICE server list from settings."""
-    servers = [
+    """Build ICE server list for server-side (aiortc)."""
+    # Self-hosted coturn on same host (network_mode: host)
+    return [
         RTCIceServer(urls="stun:stun.l.google.com:19302"),
+        RTCIceServer(urls="stun:localhost:3478"),
+        RTCIceServer(
+            urls="turn:localhost:3478",
+            username="turnuser",
+            credential="turnpassword",
+        ),
+        RTCIceServer(
+            urls="turn:localhost:3478?transport=tcp",
+            username="turnuser",
+            credential="turnpassword",
+        ),
     ]
-    if settings and settings.turn_username and settings.turn_credential:
-        # Metered.ca TURN servers - exact URLs from dashboard
-        servers.extend([
-            RTCIceServer(urls="stun:stun.relay.metered.ca:80"),
-            RTCIceServer(
-                urls="turn:global.relay.metered.ca:80",
-                username=settings.turn_username,
-                credential=settings.turn_credential,
-            ),
-            RTCIceServer(
-                urls="turn:global.relay.metered.ca:80?transport=tcp",
-                username=settings.turn_username,
-                credential=settings.turn_credential,
-            ),
-            RTCIceServer(
-                urls="turn:global.relay.metered.ca:443",
-                username=settings.turn_username,
-                credential=settings.turn_credential,
-            ),
-            RTCIceServer(
-                urls="turns:global.relay.metered.ca:443?transport=tcp",
-                username=settings.turn_username,
-                credential=settings.turn_credential,
-            ),
-        ])
-    return servers
+
+
+def _get_external_ip() -> str:
+    """Get the external IP address of this host."""
+    import socket
+    try:
+        # Connect to external server to determine our IP
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "localhost"
 
 
 def get_ice_servers_for_client() -> list:
-    """Get ICE servers in format suitable for JavaScript client."""
-    servers = [
+    """Get ICE servers for JavaScript client (needs external IP)."""
+    external_ip = _get_external_ip()
+    logger.info(f"Using external IP for TURN: {external_ip}")
+
+    return [
         {"urls": "stun:stun.l.google.com:19302"},
+        {"urls": f"stun:{external_ip}:3478"},
+        {
+            "urls": f"turn:{external_ip}:3478",
+            "username": "turnuser",
+            "credential": "turnpassword",
+        },
+        {
+            "urls": f"turn:{external_ip}:3478?transport=tcp",
+            "username": "turnuser",
+            "credential": "turnpassword",
+        },
     ]
-    if settings and settings.turn_username and settings.turn_credential:
-        # Metered.ca TURN servers - exact URLs from dashboard
-        servers.extend([
-            {"urls": "stun:stun.relay.metered.ca:80"},
-            {
-                "urls": "turn:global.relay.metered.ca:80",
-                "username": settings.turn_username,
-                "credential": settings.turn_credential,
-            },
-            {
-                "urls": "turn:global.relay.metered.ca:80?transport=tcp",
-                "username": settings.turn_username,
-                "credential": settings.turn_credential,
-            },
-            {
-                "urls": "turn:global.relay.metered.ca:443",
-                "username": settings.turn_username,
-                "credential": settings.turn_credential,
-            },
-            {
-                "urls": "turns:global.relay.metered.ca:443?transport=tcp",
-                "username": settings.turn_username,
-                "credential": settings.turn_credential,
-            },
-        ])
-    return servers
 
 
 class HTTPTTSService(TTSService):
@@ -318,9 +306,9 @@ async def lifespan(app: FastAPI):
 
     logger.info("Starting Orchestrator service...")
 
-    # Initialize WebRTC handler with ICE servers from settings
+    # Initialize WebRTC handler with self-hosted coturn
     webrtc_handler = SmallWebRTCRequestHandler(ice_servers=get_ice_servers())
-    logger.info(f"WebRTC handler initialized with TURN server: {settings.turn_server_url}")
+    logger.info("WebRTC handler initialized with self-hosted coturn (localhost:3478)")
 
     # Initialize RAG service
     rag_service = RAGService(settings)

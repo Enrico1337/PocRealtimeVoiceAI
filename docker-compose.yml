@@ -109,6 +109,34 @@ services:
       - "8003:8000"
 
   # =============================================================================
+  # COTURN - Self-hosted TURN Server for WebRTC
+  # =============================================================================
+  coturn:
+    image: coturn/coturn:latest
+    container_name: poc-coturn
+    restart: unless-stopped
+    network_mode: host
+    command:
+      - -n
+      - --log-file=stdout
+      - --listening-port=3478
+      - --tls-listening-port=5349
+      - --min-port=49152
+      - --max-port=49200
+      - --realm=poc-voice
+      - --user=turnuser:turnpassword
+      - --lt-cred-mech
+      - --fingerprint
+      - --no-cli
+      - --no-multicast-peers
+    healthcheck:
+      test: ["CMD", "true"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  # =============================================================================
   # ORCHESTRATOR - Main Voice Pipeline
   # =============================================================================
   orchestrator:
@@ -134,10 +162,6 @@ services:
       - VAD_SILENCE_MS=${VAD_SILENCE_MS:-800}
       - RAG_TOP_K=${RAG_TOP_K:-4}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      # WebRTC / TURN server config (set via .env or environment)
-      - TURN_SERVER_URL=${TURN_SERVER_URL:-turn:global.relay.metered.ca:443?transport=tcp}
-      - TURN_USERNAME=${TURN_USERNAME:-}
-      - TURN_CREDENTIAL=${TURN_CREDENTIAL:-}
     volumes:
       - ./kb:/app/kb:ro
       - hf-cache:/root/.cache/huggingface
