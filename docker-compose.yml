@@ -1,0 +1,154 @@
+networks:
+  voice-net:
+    driver: bridge
+
+volumes:
+  qdrant-data:
+  hf-cache:
+
+services:
+  # =============================================================================
+  # QDRANT - Vector Database for RAG
+  # =============================================================================
+  qdrant:
+    image: qdrant/qdrant:v1.12.1
+    container_name: poc-qdrant
+    restart: unless-stopped
+    networks:
+      - voice-net
+    volumes:
+      - qdrant-data:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    # Internal only - no external port exposure
+
+  # =============================================================================
+  # STT - Speech-to-Text (faster-whisper-server)
+  # =============================================================================
+  stt:
+    image: fedirz/faster-whisper-server:latest-cuda
+    container_name: poc-stt
+    restart: unless-stopped
+    networks:
+      - voice-net
+    environment:
+      - WHISPER__MODEL=${STT_MODEL:-Systran/faster-distil-whisper-large-v3}
+      - WHISPER__DEVICE=${STT_DEVICE:-cuda}
+      - WHISPER__COMPUTE_TYPE=${STT_COMPUTE_TYPE:-float16}
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    # Internal only - no external port exposure
+
+  # =============================================================================
+  # LLM - Language Model (vLLM OpenAI Server)
+  # =============================================================================
+  llm:
+    image: vllm/vllm-openai:latest
+    container_name: poc-llm
+    restart: unless-stopped
+    networks:
+      - voice-net
+    environment:
+      - HF_TOKEN=${HF_TOKEN:-}
+      - VLLM_ATTENTION_BACKEND=${VLLM_ATTENTION_BACKEND:-FLASHINFER}
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    command: >
+      --model ${LLM_MODEL:-stelterlab/Qwen3-30B-A3B-Instruct-2507-AWQ}
+      --max-model-len ${LLM_MAX_CONTEXT:-32768}
+      --gpu-memory-utilization ${LLM_GPU_MEMORY:-0.85}
+      --dtype auto
+      --quantization awq
+      --trust-remote-code
+      --port 8000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 300s
+    # Internal only - no external port exposure
+
+  # =============================================================================
+  # TTS - Text-to-Speech (Custom Chatterbox Service)
+  # =============================================================================
+  tts:
+    build:
+      context: ./tts
+      dockerfile: Dockerfile
+    container_name: poc-tts
+    restart: unless-stopped
+    networks:
+      - voice-net
+    environment:
+      - TTS_DEVICE=${TTS_DEVICE:-cuda}
+      - TTS_SAMPLE_RATE=${TTS_SAMPLE_RATE:-24000}
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    # Internal only - no external port exposure
+
+  # =============================================================================
+  # ORCHESTRATOR - Main Voice Pipeline
+  # =============================================================================
+  orchestrator:
+    build:
+      context: ./orchestrator
+      dockerfile: Dockerfile
+    container_name: poc-orchestrator
+    restart: unless-stopped
+    networks:
+      - voice-net
+    ports:
+      - "${ORCHESTRATOR_PORT:-7860}:7860"
+    environment:
+      # Service URLs (internal network)
+      - STT_BASE_URL=http://stt:8000
+      - LLM_BASE_URL=http://llm:8000
+      - TTS_BASE_URL=http://tts:8000
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      # Model configs
+      - STT_MODEL=${STT_MODEL:-Systran/faster-distil-whisper-large-v3}
+      - STT_LANGUAGE=${STT_LANGUAGE:-de}
+      - LLM_MODEL=${LLM_MODEL:-stelterlab/Qwen3-30B-A3B-Instruct-2507-AWQ}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-BAAI/bge-m3}
+      # Pipeline config
+      - VAD_SILENCE_MS=${VAD_SILENCE_MS:-800}
+      - RAG_TOP_K=${RAG_TOP_K:-4}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./kb:/app/kb:ro
+      - hf-cache:/root/.cache/huggingface
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      stt:
+        condition: service_healthy
+      llm:
+        condition: service_healthy
+      tts:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7860/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s

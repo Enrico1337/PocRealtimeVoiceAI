@@ -1,0 +1,22 @@
+# FastAPI & Server
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6
+
+# Pipecat for Voice Pipeline
+pipecat-ai[silero,openai]>=0.0.54
+
+# RAG Components
+qdrant-client>=1.7.0
+sentence-transformers>=2.2.2
+
+# Settings & Utils
+pydantic-settings>=2.1.0
+httpx>=0.26.0
+
+# Audio Processing
+numpy>=1.24.0
+
+# WebRTC
+aiortc>=1.6.0
+aioice>=0.9.0

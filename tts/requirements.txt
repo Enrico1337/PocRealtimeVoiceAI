@@ -1,0 +1,14 @@
+# FastAPI & Server
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+
+# Chatterbox TTS
+chatterbox-tts>=0.1.0
+
+# PyTorch (CUDA)
+torch>=2.1.0
+torchaudio>=2.1.0
+
+# Audio processing
+numpy>=1.24.0
+scipy>=1.11.0

@@ -1,0 +1,31 @@
+# GPU Override - Use with: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
+
+services:
+  stt:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  llm:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # vLLM requires ipc=host for CUDA shared memory
+    ipc: host
+
+  tts:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
