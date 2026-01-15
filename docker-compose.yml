@@ -26,7 +26,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
-    # Internal only - no external port exposure
+    ports:
+      - "6333:6333"
 
   # =============================================================================
   # STT - Speech-to-Text (faster-whisper-server)
@@ -49,7 +50,8 @@ services:
       timeout: 10s
       retries: 5
       start_period: 120s
-    # Internal only - no external port exposure
+    ports:
+      - "8001:8000"
 
   # =============================================================================
   # LLM - Language Model (vLLM OpenAI Server)
@@ -78,7 +80,8 @@ services:
       timeout: 10s
       retries: 10
       start_period: 300s
-    # Internal only - no external port exposure
+    ports:
+      - "8002:8000"
 
   # =============================================================================
   # TTS - Text-to-Speech (Custom Chatterbox Service)
@@ -102,7 +105,8 @@ services:
       timeout: 10s
       retries: 5
       start_period: 120s
-    # Internal only - no external port exposure
+    ports:
+      - "8003:8000"
 
   # =============================================================================
   # ORCHESTRATOR - Main Voice Pipeline
@@ -113,16 +117,13 @@ services:
       dockerfile: Dockerfile
     container_name: poc-orchestrator
     restart: unless-stopped
-    networks:
-      - voice-net
-    ports:
-      - "${ORCHESTRATOR_PORT:-7860}:7860"
+    network_mode: host
     environment:
-      # Service URLs (internal network)
-      - STT_BASE_URL=http://stt:8000
-      - LLM_BASE_URL=http://llm:8000
-      - TTS_BASE_URL=http://tts:8000
-      - QDRANT_HOST=qdrant
+      # Service URLs (via exposed ports on localhost)
+      - STT_BASE_URL=http://localhost:8001
+      - LLM_BASE_URL=http://localhost:8002
+      - TTS_BASE_URL=http://localhost:8003
+      - QDRANT_HOST=localhost
       - QDRANT_PORT=6333
       # Model configs
       - STT_MODEL=${STT_MODEL:-Systran/faster-distil-whisper-large-v3}
