@@ -44,7 +44,27 @@ logger = logging.getLogger(__name__)
 # Global instances
 rag_service: Optional[RAGService] = None
 settings: Optional[Settings] = None
-webrtc_handler = SmallWebRTCRequestHandler()
+webrtc_handler = SmallWebRTCRequestHandler(
+    ice_servers=[
+        {"urls": "stun:stun.l.google.com:19302"},
+        {"urls": "stun:stun.relay.metered.ca:80"},
+        {
+            "urls": "turn:global.relay.metered.ca:80",
+            "username": "e86cf6de4f5f9adc46f5a648",
+            "credential": "2D9tqNMVS+IjOECB",
+        },
+        {
+            "urls": "turn:global.relay.metered.ca:443",
+            "username": "e86cf6de4f5f9adc46f5a648",
+            "credential": "2D9tqNMVS+IjOECB",
+        },
+        {
+            "urls": "turn:global.relay.metered.ca:443?transport=tcp",
+            "username": "e86cf6de4f5f9adc46f5a648",
+            "credential": "2D9tqNMVS+IjOECB",
+        },
+    ]
+)
 
 
 class HTTPTTSService(TTSService):
@@ -478,9 +498,28 @@ CLIENT_HTML = """
                     }
                 });
 
-                // Create peer connection
+                // Create peer connection with TURN servers for NAT traversal
                 pc = new RTCPeerConnection({
-                    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun.relay.metered.ca:80' },
+                        {
+                            urls: 'turn:global.relay.metered.ca:80',
+                            username: 'e86cf6de4f5f9adc46f5a648',
+                            credential: '2D9tqNMVS+IjOECB'
+                        },
+                        {
+                            urls: 'turn:global.relay.metered.ca:443',
+                            username: 'e86cf6de4f5f9adc46f5a648',
+                            credential: '2D9tqNMVS+IjOECB'
+                        },
+                        {
+                            urls: 'turn:global.relay.metered.ca:443?transport=tcp',
+                            username: 'e86cf6de4f5f9adc46f5a648',
+                            credential: '2D9tqNMVS+IjOECB'
+                        }
+                    ],
+                    iceTransportPolicy: 'all'
                 });
 
                 // Add local audio track
