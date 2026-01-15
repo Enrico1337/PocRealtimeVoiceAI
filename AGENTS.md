@@ -143,6 +143,21 @@ df -h
 free -h
 ```
 
+### 6. Quick Import Test
+
+```bash
+# Validate all pipecat imports without full startup
+# Useful after dependency changes or debugging import errors
+docker-compose run --rm test
+
+# Expected output:
+# Testing pipecat imports...
+#   OK: pipecat.audio.vad.silero
+#   OK: pipecat.services.tts_service
+#   ...
+# All imports OK!
+```
+
 ---
 
 ## Common Issues and Solutions
@@ -626,6 +641,66 @@ docker compose logs <service> 2>&1 | grep -A 20 "Traceback"
 # - Missing dependencies: rebuild container
 # - Config error: check .env values
 # - Import error: check requirements.txt
+```
+
+---
+
+### ISSUE 11: WebRTC TURN Server 401 Unauthorized
+
+**Symptoms:**
+```
+aioice.stun.TransactionFailed: STUN transaction failed (401 - )
+ICE connection state is checking, connection is connecting
+Timeout establishing the connection to the remote peer
+```
+
+**Diagnosis:**
+```bash
+# Check orchestrator logs for TURN errors
+docker compose logs orchestrator | grep -i "401\|TransactionFailed\|TURN"
+
+# Check if TURN credentials are set
+docker compose exec orchestrator env | grep TURN
+```
+
+**Cause:**
+TURN server credentials are invalid, expired, or not configured. This happens when:
+- Using expired public test credentials
+- `.env` file not created or not loaded
+- Credentials not set in environment
+
+**Solutions:**
+
+A) Create your own TURN credentials (free):
+```bash
+# 1. Go to https://www.metered.ca/stun-turn
+# 2. Create free account
+# 3. Create TURN server credentials
+# 4. Add to .env file in project root:
+
+TURN_USERNAME=your_metered_username
+TURN_CREDENTIAL=your_metered_credential
+```
+
+B) Verify .env is loaded:
+```bash
+# Check .env exists
+cat .env | grep TURN
+
+# Restart orchestrator to reload config
+docker compose down orchestrator
+docker compose up -d orchestrator
+
+# Verify credentials are loaded
+docker compose logs orchestrator | grep "TURN server"
+```
+
+C) Test TURN server connectivity:
+```bash
+# Use the WebRTC samples tester:
+# https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/
+# Add your TURN server and click "Gather candidates"
+# If "relay" candidates appear, TURN is working
 ```
 
 ---

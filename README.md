@@ -101,6 +101,10 @@ RAG_TOP_K=4                 # Number of RAG results
 # Resources
 LLM_MAX_CONTEXT=32768       # Context window
 LLM_GPU_MEMORY=0.85         # GPU memory utilization
+
+# WebRTC / TURN Server (required for remote access via SSH tunnel)
+TURN_USERNAME=<your_metered_username>    # Get free credentials at metered.ca
+TURN_CREDENTIAL=<your_metered_credential>
 ```
 
 ## Knowledge Base
@@ -190,6 +194,25 @@ make shell-orchestrator
 
 # Clean up everything
 make clean
+```
+
+## Testing
+
+### Quick Import Test
+
+Validate all pipecat imports before deployment (useful after dependency changes):
+
+```bash
+docker-compose run --rm test
+```
+
+Expected output:
+```
+Testing pipecat imports...
+  OK: pipecat.audio.vad.silero
+  OK: pipecat.services.tts_service
+  ...
+All imports OK!
 ```
 
 ## Documentation
