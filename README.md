@@ -78,10 +78,11 @@ Click "Connect" and start speaking!
 | Service | Port | Description |
 |---------|------|-------------|
 | orchestrator | 7860 (exposed) | Main pipeline + Web UI |
-| stt | 8000 (internal) | faster-whisper-server |
-| llm | 8000 (internal) | vLLM OpenAI server |
-| tts | 8000 (internal) | Chatterbox TTS |
-| qdrant | 6333 (internal) | Vector database |
+| coturn | 3478 (host) | Self-hosted TURN server for WebRTC |
+| stt | 8001 (exposed) | faster-whisper-server |
+| llm | 8002 (exposed) | vLLM OpenAI server |
+| tts | 8003 (exposed) | Chatterbox TTS |
+| qdrant | 6333 (exposed) | Vector database |
 
 ## Configuration
 
@@ -102,9 +103,9 @@ RAG_TOP_K=4                 # Number of RAG results
 LLM_MAX_CONTEXT=32768       # Context window
 LLM_GPU_MEMORY=0.85         # GPU memory utilization
 
-# WebRTC / TURN Server (required for remote access via SSH tunnel)
-TURN_USERNAME=<your_metered_username>    # Get free credentials at metered.ca
-TURN_CREDENTIAL=<your_metered_credential>
+# WebRTC / TURN Server
+# Self-hosted coturn is included - no external credentials needed
+# Default credentials: turnuser / turnpassword (see docker-compose.yml)
 ```
 
 ## Knowledge Base
@@ -129,7 +130,9 @@ Quick start:
 1. Select a GPU instance (RTX 4090 / 24GB+ VRAM)
 2. Clone repo: `git clone <repo-url> && cd PocRealtimeVoiceAI`
 3. Configure: `cp .env.example .env`
-4. Expose port 7860 in vast.ai console (Direct Port Mappings: `7860/http`)
+4. Expose ports in vast.ai console (Direct Port Mappings):
+   - `7860/http` (Web UI)
+   - `3478/tcp` and `3478/udp` (TURN server)
 5. Start: `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d`
 6. Access via the vast.ai assigned URL
 
@@ -203,7 +206,7 @@ make clean
 Validate all pipecat imports before deployment (useful after dependency changes):
 
 ```bash
-docker-compose run --rm test
+docker compose --profile test run --rm test
 ```
 
 Expected output:
@@ -214,6 +217,16 @@ Testing pipecat imports...
   ...
 All imports OK!
 ```
+
+### Coturn TURN Server Test
+
+Test TURN server connectivity (requires coturn to be running):
+
+```bash
+docker compose --profile test-coturn run --rm test-coturn
+```
+
+Expected output: Connection statistics showing successful relay through the TURN server.
 
 ## Documentation
 

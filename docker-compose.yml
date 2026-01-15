@@ -130,11 +130,11 @@ services:
       - --no-cli
       - --no-multicast-peers
     healthcheck:
-      test: ["CMD", "true"]
+      test: ["CMD", "turnutils_stunclient", "localhost"]
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 5s
+      start_period: 10s
 
   # =============================================================================
   # ORCHESTRATOR - Main Voice Pipeline
@@ -192,3 +192,18 @@ services:
     container_name: poc-test
     command: ["python", "test_imports.py"]
     profiles: ["test"]
+
+  # =============================================================================
+  # TEST-COTURN - TURN server connectivity test
+  # Usage: docker compose --profile test-coturn run --rm test-coturn
+  # =============================================================================
+  test-coturn:
+    image: coturn/coturn:latest
+    container_name: poc-test-coturn
+    network_mode: host
+    entrypoint: ["turnutils_uclient"]
+    command: ["-u", "turnuser", "-w", "turnpassword", "-p", "3478", "localhost"]
+    profiles: ["test-coturn"]
+    depends_on:
+      coturn:
+        condition: service_healthy

@@ -9,10 +9,12 @@ This document provides comprehensive instructions for AI agents to diagnose and 
 │                     ARCHITECTURE                                 │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│   Browser (WebRTC)                                               │
-│        │                                                         │
-│        ▼ Port 7860                                               │
-│   ┌─────────────────────────────────────────────────────────┐   │
+│   Browser (WebRTC) ◄──────────────────────────────────────┐     │
+│        │                                                   │     │
+│        │ Port 7860                          ┌─────────┐   │     │
+│        │                                    │ COTURN  │───┘     │
+│        ▼                                    │  :3478  │         │
+│   ┌─────────────────────────────────────────┴─────────┴─────┐   │
 │   │              ORCHESTRATOR (Python/Pipecat)               │   │
 │   │  - FastAPI server on :7860                               │   │
 │   │  - Serves WebRTC client HTML                             │   │
@@ -23,7 +25,7 @@ This document provides comprehensive instructions for AI agents to diagnose and 
 │         ▼           ▼           ▼           ▼                    │
 │   ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐               │
 │   │   STT   │ │   LLM   │ │   TTS   │ │ Qdrant  │               │
-│   │  :8000  │ │  :8000  │ │  :8000  │ │  :6333  │               │
+│   │  :8001  │ │  :8002  │ │  :8003  │ │  :6333  │               │
 │   │ faster- │ │  vLLM   │ │Chatter- │ │ Vector  │               │
 │   │ whisper │ │  Qwen3  │ │  box    │ │   DB    │               │
 │   └─────────┘ └─────────┘ └─────────┘ └─────────┘               │
@@ -645,61 +647,76 @@ docker compose logs <service> 2>&1 | grep -A 20 "Traceback"
 
 ---
 
-### ISSUE 11: WebRTC TURN Server 401 Unauthorized
+### ISSUE 11: WebRTC Connection Issues (TURN/ICE)
 
 **Symptoms:**
 ```
-aioice.stun.TransactionFailed: STUN transaction failed (401 - )
 ICE connection state is checking, connection is connecting
 Timeout establishing the connection to the remote peer
+WebRTC stuck at "Connecting"
 ```
 
 **Diagnosis:**
 ```bash
-# Check orchestrator logs for TURN errors
-docker compose logs orchestrator | grep -i "401\|TransactionFailed\|TURN"
+# Check coturn is running and healthy
+docker compose ps coturn
 
-# Check if TURN credentials are set
-docker compose exec orchestrator env | grep TURN
+# Check coturn logs
+docker compose logs coturn
+
+# Check orchestrator TURN configuration
+docker compose logs orchestrator | grep -i "coturn\|TURN"
+
+# Test TURN server connectivity
+docker compose --profile test-coturn run --rm test-coturn
 ```
 
 **Cause:**
-TURN server credentials are invalid, expired, or not configured. This happens when:
-- Using expired public test credentials
-- `.env` file not created or not loaded
-- Credentials not set in environment
+Self-hosted coturn TURN server not running or not reachable. This happens when:
+- Coturn container not started or unhealthy
+- Port 3478 not accessible (firewall/vast.ai port mapping)
+- Network mode issues
 
 **Solutions:**
 
-A) Create your own TURN credentials (free):
+A) Verify coturn is running:
 ```bash
-# 1. Go to https://www.metered.ca/stun-turn
-# 2. Create free account
-# 3. Create TURN server credentials
-# 4. Add to .env file in project root:
+# Start coturn if not running
+docker compose up -d coturn
 
-TURN_USERNAME=your_metered_username
-TURN_CREDENTIAL=your_metered_credential
+# Check health status
+docker compose ps coturn
+# Should show "healthy"
+
+# Check logs for errors
+docker compose logs coturn --tail=50
 ```
 
-B) Verify .env is loaded:
+B) Test TURN server:
 ```bash
-# Check .env exists
-cat .env | grep TURN
+# Run the built-in TURN test
+docker compose --profile test-coturn run --rm test-coturn
 
-# Restart orchestrator to reload config
-docker compose down orchestrator
-docker compose up -d orchestrator
-
-# Verify credentials are loaded
-docker compose logs orchestrator | grep "TURN server"
+# Expected output: Connection statistics showing successful relay
 ```
 
-C) Test TURN server connectivity:
+C) For remote access (vast.ai/cloud):
+```bash
+# Ensure ports are exposed in cloud console:
+# - 7860/http (Web UI)
+# - 3478/tcp (TURN TCP)
+# - 3478/udp (TURN UDP)
+
+# On vast.ai: Add to "Direct Port Mappings"
+```
+
+D) Manual TURN test:
 ```bash
 # Use the WebRTC samples tester:
 # https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/
-# Add your TURN server and click "Gather candidates"
+# Add: turn:<your-server-ip>:3478
+# Username: turnuser
+# Credential: turnpassword
 # If "relay" candidates appear, TURN is working
 ```
 
