@@ -5,6 +5,8 @@ python-multipart>=0.0.6
 
 # Pipecat for Voice Pipeline
 pipecat-ai[webrtc,silero]==0.0.99
+opencv-python-headless
+onnxruntime
 
 # RAG Components
 qdrant-client>=1.7.0
