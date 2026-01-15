@@ -70,7 +70,6 @@ services:
       --max-model-len ${LLM_MAX_CONTEXT:-32768}
       --gpu-memory-utilization ${LLM_GPU_MEMORY:-0.85}
       --dtype auto
-      --quantization awq
       --trust-remote-code
       --port 8000
     healthcheck:
