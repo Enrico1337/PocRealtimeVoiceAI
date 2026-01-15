@@ -29,6 +29,7 @@ from pipecat.transports.smallwebrtc.request_handler import (
     SmallWebRTCRequest,
 )
 from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
+from aiortc import RTCIceServer
 from pipecat.serializers.protobuf import ProtobufFrameSerializer
 from pipecat.services.ai_services import TTSService
 from pipecat.frames.frames import TTSSpeakFrame, TextFrame, Frame, EndFrame
@@ -46,23 +47,23 @@ rag_service: Optional[RAGService] = None
 settings: Optional[Settings] = None
 webrtc_handler = SmallWebRTCRequestHandler(
     ice_servers=[
-        {"urls": "stun:stun.l.google.com:19302"},
-        {"urls": "stun:stun.relay.metered.ca:80"},
-        {
-            "urls": "turn:global.relay.metered.ca:80",
-            "username": "e86cf6de4f5f9adc46f5a648",
-            "credential": "2D9tqNMVS+IjOECB",
-        },
-        {
-            "urls": "turn:global.relay.metered.ca:443",
-            "username": "e86cf6de4f5f9adc46f5a648",
-            "credential": "2D9tqNMVS+IjOECB",
-        },
-        {
-            "urls": "turn:global.relay.metered.ca:443?transport=tcp",
-            "username": "e86cf6de4f5f9adc46f5a648",
-            "credential": "2D9tqNMVS+IjOECB",
-        },
+        RTCIceServer(urls="stun:stun.l.google.com:19302"),
+        RTCIceServer(urls="stun:stun.relay.metered.ca:80"),
+        RTCIceServer(
+            urls="turn:global.relay.metered.ca:80",
+            username="e86cf6de4f5f9adc46f5a648",
+            credential="2D9tqNMVS+IjOECB",
+        ),
+        RTCIceServer(
+            urls="turn:global.relay.metered.ca:443",
+            username="e86cf6de4f5f9adc46f5a648",
+            credential="2D9tqNMVS+IjOECB",
+        ),
+        RTCIceServer(
+            urls="turn:global.relay.metered.ca:443?transport=tcp",
+            username="e86cf6de4f5f9adc46f5a648",
+            credential="2D9tqNMVS+IjOECB",
+        ),
     ]
 )
 
