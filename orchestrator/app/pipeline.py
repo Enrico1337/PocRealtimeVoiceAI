@@ -12,8 +12,7 @@ from pipecat.frames.frames import (
     EndFrame,
     Frame,
     InterimTranscriptionFrame,
-    StartInterruptionFrame,
-    StopInterruptionFrame,
+    InterruptionFrame,
     TextFrame,
     TranscriptionFrame,
     UserStartedSpeakingFrame,
@@ -111,7 +110,7 @@ class InterruptionHandler(FrameProcessor):
                     "Barge-in detected - interrupting bot"
                 )
                 # Send interruption frame to stop TTS
-                await self.push_frame(StartInterruptionFrame(), FrameDirection.DOWNSTREAM)
+                await self.push_frame(InterruptionFrame(), FrameDirection.DOWNSTREAM)
 
         elif isinstance(frame, UserStoppedSpeakingFrame):
             pass  # VAD handles this
