@@ -22,7 +22,10 @@ from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
 from pipecat.services.openai import OpenAILLMService
 from pipecat.transports.network.small_webrtc import SmallWebRTCTransport
-from pipecat.transports.smallwebrtc.request_handler import SmallWebRTCRequestHandler
+from pipecat.transports.smallwebrtc.request_handler import (
+    SmallWebRTCRequestHandler,
+    SmallWebRTCRequest,
+)
 from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
 from pipecat.serializers.protobuf import ProtobufFrameSerializer
 from pipecat.services.ai_services import TTSService
@@ -308,11 +311,8 @@ async def webrtc_offer(request: Request):
             """Callback when WebRTC connection is established."""
             await run_bot(connection)
 
-        answer = await webrtc_handler.offer(
-            sdp=sdp,
-            type=sdp_type,
-            on_connection=on_connection
-        )
+        request_obj = SmallWebRTCRequest(sdp=sdp, type=sdp_type)
+        answer = await webrtc_handler.handle_web_request(request_obj, on_connection)
 
         return JSONResponse(answer)
 
