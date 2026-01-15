@@ -9,7 +9,7 @@ opencv-python-headless
 onnxruntime
 
 # RAG Components
-qdrant-client>=1.7.0
+qdrant-client>=1.11.0,<1.13.0
 sentence-transformers>=2.2.2
 
 # Settings & Utils

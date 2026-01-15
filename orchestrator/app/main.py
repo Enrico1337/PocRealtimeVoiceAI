@@ -20,9 +20,9 @@ from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
-from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
-from pipecat.services.openai import OpenAILLMService
-from pipecat.transports.network.small_webrtc import SmallWebRTCTransport
+from pipecat.processors.aggregators.llm_context import LLMContext, LLMContextAggregatorPair
+from pipecat.services.openai.llm import OpenAILLMService
+from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 from pipecat.transports.base_transport import TransportParams
 from pipecat.transports.smallwebrtc.request_handler import (
     SmallWebRTCRequestHandler,
@@ -30,9 +30,8 @@ from pipecat.transports.smallwebrtc.request_handler import (
 )
 from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
 from aiortc import RTCIceServer
-from pipecat.serializers.protobuf import ProtobufFrameSerializer
-from pipecat.services.ai_services import TTSService
-from pipecat.frames.frames import TTSSpeakFrame, TextFrame, Frame, EndFrame
+from pipecat.services.tts import TTSService
+from pipecat.frames.frames import TextFrame, Frame, EndFrame
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
 from .pipeline import RAGProcessor, InterruptionHandler, ResponseLogger
@@ -45,27 +44,62 @@ logger = logging.getLogger(__name__)
 # Global instances
 rag_service: Optional[RAGService] = None
 settings: Optional[Settings] = None
-webrtc_handler = SmallWebRTCRequestHandler(
-    ice_servers=[
+webrtc_handler: Optional[SmallWebRTCRequestHandler] = None
+
+
+def get_ice_servers() -> list:
+    """Build ICE server list from settings."""
+    servers = [
         RTCIceServer(urls="stun:stun.l.google.com:19302"),
         RTCIceServer(urls="stun:stun.relay.metered.ca:80"),
-        RTCIceServer(
-            urls="turn:global.relay.metered.ca:80",
-            username="e86cf6de4f5f9adc46f5a648",
-            credential="2D9tqNMVS+IjOECB",
-        ),
-        RTCIceServer(
-            urls="turn:global.relay.metered.ca:443",
-            username="e86cf6de4f5f9adc46f5a648",
-            credential="2D9tqNMVS+IjOECB",
-        ),
-        RTCIceServer(
-            urls="turn:global.relay.metered.ca:443?transport=tcp",
-            username="e86cf6de4f5f9adc46f5a648",
-            credential="2D9tqNMVS+IjOECB",
-        ),
     ]
-)
+    if settings and settings.turn_username and settings.turn_credential:
+        # Add multiple TURN server configurations for better connectivity
+        servers.extend([
+            RTCIceServer(
+                urls="turn:global.relay.metered.ca:80",
+                username=settings.turn_username,
+                credential=settings.turn_credential,
+            ),
+            RTCIceServer(
+                urls="turn:global.relay.metered.ca:443",
+                username=settings.turn_username,
+                credential=settings.turn_credential,
+            ),
+            RTCIceServer(
+                urls=settings.turn_server_url,
+                username=settings.turn_username,
+                credential=settings.turn_credential,
+            ),
+        ])
+    return servers
+
+
+def get_ice_servers_for_client() -> list:
+    """Get ICE servers in format suitable for JavaScript client."""
+    servers = [
+        {"urls": "stun:stun.l.google.com:19302"},
+        {"urls": "stun:stun.relay.metered.ca:80"},
+    ]
+    if settings and settings.turn_username and settings.turn_credential:
+        servers.extend([
+            {
+                "urls": "turn:global.relay.metered.ca:80",
+                "username": settings.turn_username,
+                "credential": settings.turn_credential,
+            },
+            {
+                "urls": "turn:global.relay.metered.ca:443",
+                "username": settings.turn_username,
+                "credential": settings.turn_credential,
+            },
+            {
+                "urls": settings.turn_server_url,
+                "username": settings.turn_username,
+                "credential": settings.turn_credential,
+            },
+        ])
+    return servers
 
 
 class HTTPTTSService(TTSService):
@@ -211,12 +245,12 @@ async def run_bot(webrtc_connection: SmallWebRTCConnection) -> None:
         )
 
         # Context for conversation
-        context = OpenAILLMContext(
+        context = LLMContext(
             messages=[
                 {"role": "system", "content": settings.system_prompt}
             ]
         )
-        context_aggregator = llm_service.create_context_aggregator(context)
+        context_aggregator = LLMContextAggregatorPair(context)
 
         # Custom processors
         rag_processor = RAGProcessor(rag_service, settings)
@@ -264,13 +298,17 @@ async def run_bot(webrtc_connection: SmallWebRTCConnection) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
-    global rag_service, settings
+    global rag_service, settings, webrtc_handler
 
     # Startup
     settings = get_settings()
     setup_logging(settings.log_level)
 
     logger.info("Starting Orchestrator service...")
+
+    # Initialize WebRTC handler with ICE servers from settings
+    webrtc_handler = SmallWebRTCRequestHandler(ice_servers=get_ice_servers())
+    logger.info(f"WebRTC handler initialized with TURN server: {settings.turn_server_url}")
 
     # Initialize RAG service
     rag_service = RAGService(settings)
@@ -316,6 +354,12 @@ async def health_check():
         "service": "orchestrator",
         "rag_initialized": rag_service._initialized if rag_service else False
     }
+
+
+@app.get("/api/ice-servers")
+async def get_ice_servers_endpoint():
+    """Return ICE servers configuration for WebRTC client."""
+    return {"iceServers": get_ice_servers_for_client()}
 
 
 @app.post("/api/offer")
@@ -489,6 +533,14 @@ CLIENT_HTML = """
                 setStatus('connecting', 'Connecting...');
                 connectBtn.disabled = true;
 
+                // Fetch ICE servers from server
+                const iceResponse = await fetch('/api/ice-servers');
+                if (!iceResponse.ok) {
+                    throw new Error('Failed to fetch ICE servers');
+                }
+                const iceConfig = await iceResponse.json();
+                console.log('ICE servers:', iceConfig.iceServers);
+
                 // Get microphone access
                 localStream = await navigator.mediaDevices.getUserMedia({
                     audio: {
@@ -499,27 +551,9 @@ CLIENT_HTML = """
                     }
                 });
 
-                // Create peer connection with TURN servers for NAT traversal
+                // Create peer connection with ICE servers from server
                 pc = new RTCPeerConnection({
-                    iceServers: [
-                        { urls: 'stun:stun.l.google.com:19302' },
-                        { urls: 'stun:stun.relay.metered.ca:80' },
-                        {
-                            urls: 'turn:global.relay.metered.ca:80',
-                            username: 'e86cf6de4f5f9adc46f5a648',
-                            credential: '2D9tqNMVS+IjOECB'
-                        },
-                        {
-                            urls: 'turn:global.relay.metered.ca:443',
-                            username: 'e86cf6de4f5f9adc46f5a648',
-                            credential: '2D9tqNMVS+IjOECB'
-                        },
-                        {
-                            urls: 'turn:global.relay.metered.ca:443?transport=tcp',
-                            username: 'e86cf6de4f5f9adc46f5a648',
-                            credential: '2D9tqNMVS+IjOECB'
-                        }
-                    ],
+                    iceServers: iceConfig.iceServers,
                     iceTransportPolicy: 'all'
                 });
 

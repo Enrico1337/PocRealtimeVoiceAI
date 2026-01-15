@@ -58,6 +58,22 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", description="Logging level")
 
     # =========================================================================
+    # WebRTC / TURN Server Configuration
+    # =========================================================================
+    turn_server_url: str = Field(
+        default="turn:global.relay.metered.ca:443?transport=tcp",
+        description="TURN server URL"
+    )
+    turn_username: str = Field(
+        default="e86cf6de4f5f9adc46f5a648",
+        description="TURN server username"
+    )
+    turn_credential: str = Field(
+        default="2D9tqNMVS+IjOECB",
+        description="TURN server credential"
+    )
+
+    # =========================================================================
     # Timeouts (in seconds)
     # =========================================================================
     stt_timeout: float = Field(default=30.0, description="STT request timeout")

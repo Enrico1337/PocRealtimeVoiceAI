@@ -22,9 +22,10 @@ from pipecat.frames.frames import (
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
-from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
+from pipecat.processors.aggregators.llm_context import LLMContext, LLMContextAggregatorPair
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
-from pipecat.services.openai import OpenAILLMService
+from pipecat.services.openai.llm import OpenAILLMService
+from pipecat.audio.vad.vad_analyzer import VADParams
 
 from .rag import RAGService
 from .settings import Settings
@@ -218,8 +219,8 @@ async def create_pipeline(
 
     # VAD analyzer for detecting speech
     vad_analyzer = SileroVADAnalyzer(
-        params=SileroVADAnalyzer.VADParams(
-            min_silence_duration_ms=settings.vad_silence_ms,
+        params=VADParams(
+            stop_secs=settings.vad_silence_ms / 1000.0,
         )
     )
 
@@ -231,12 +232,12 @@ async def create_pipeline(
     )
 
     # Context for conversation
-    context = OpenAILLMContext(
+    context = LLMContext(
         messages=[
             {"role": "system", "content": settings.system_prompt}
         ]
     )
-    context_aggregator = llm_service.create_context_aggregator(context)
+    context_aggregator = LLMContextAggregatorPair(context)
 
     # Custom processors
     rag_processor = RAGProcessor(rag_service, settings)
