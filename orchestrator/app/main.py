@@ -431,7 +431,12 @@ async def health_check():
 @app.get("/api/ice-servers")
 async def get_ice_servers_endpoint():
     """Return ICE servers configuration for WebRTC client."""
-    return {"iceServers": get_ice_servers_for_client()}
+    # Force relay mode when using external TURN (e.g., on vast.ai)
+    force_relay = bool(settings and settings.turn_username and settings.turn_credential)
+    return {
+        "iceServers": get_ice_servers_for_client(),
+        "forceRelay": force_relay
+    }
 
 
 @app.post("/api/offer")
@@ -624,9 +629,13 @@ CLIENT_HTML = """
                 });
 
                 // Create peer connection with ICE servers from server
+                // Use 'relay' to force TURN when direct UDP is blocked (e.g., vast.ai)
+                // Use 'all' for local development where direct connection works
+                const transportPolicy = iceConfig.forceRelay ? 'relay' : 'all';
+                console.log('ICE transport policy:', transportPolicy);
                 pc = new RTCPeerConnection({
                     iceServers: iceConfig.iceServers,
-                    iceTransportPolicy: 'all'
+                    iceTransportPolicy: transportPolicy
                 });
 
                 // Add local audio track
