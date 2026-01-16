@@ -49,22 +49,58 @@ webrtc_handler: Optional[SmallWebRTCRequestHandler] = None
 
 
 def get_ice_servers() -> list:
-    """Build ICE server list for server-side (aiortc)."""
-    # Self-hosted coturn on same host (network_mode: host)
-    return [
+    """Build ICE server list for server-side (aiortc).
+
+    Uses external TURN (metered.ca) if TURN_USERNAME is set,
+    otherwise falls back to self-hosted coturn.
+    """
+    servers = [
         RTCIceServer(urls="stun:stun.l.google.com:19302"),
-        RTCIceServer(urls="stun:localhost:3478"),
-        RTCIceServer(
-            urls="turn:localhost:3478",
-            username="turnuser",
-            credential="turnpassword",
-        ),
-        RTCIceServer(
-            urls="turn:localhost:3478?transport=tcp",
-            username="turnuser",
-            credential="turnpassword",
-        ),
     ]
+
+    # Check if external TURN is configured
+    if settings and settings.turn_username and settings.turn_credential:
+        # External TURN server (e.g., metered.ca)
+        servers.extend([
+            RTCIceServer(urls="stun:stun.relay.metered.ca:80"),
+            RTCIceServer(
+                urls="turn:global.relay.metered.ca:80",
+                username=settings.turn_username,
+                credential=settings.turn_credential,
+            ),
+            RTCIceServer(
+                urls="turn:global.relay.metered.ca:80?transport=tcp",
+                username=settings.turn_username,
+                credential=settings.turn_credential,
+            ),
+            RTCIceServer(
+                urls="turn:global.relay.metered.ca:443",
+                username=settings.turn_username,
+                credential=settings.turn_credential,
+            ),
+            RTCIceServer(
+                urls="turn:global.relay.metered.ca:443?transport=tcp",
+                username=settings.turn_username,
+                credential=settings.turn_credential,
+            ),
+        ])
+    else:
+        # Self-hosted coturn on same host (network_mode: host)
+        servers.extend([
+            RTCIceServer(urls="stun:localhost:3478"),
+            RTCIceServer(
+                urls="turn:localhost:3478",
+                username="turnuser",
+                credential="turnpassword",
+            ),
+            RTCIceServer(
+                urls="turn:localhost:3478?transport=tcp",
+                username="turnuser",
+                credential="turnpassword",
+            ),
+        ])
+
+    return servers
 
 
 def _get_external_ip() -> str:
@@ -82,24 +118,59 @@ def _get_external_ip() -> str:
 
 
 def get_ice_servers_for_client() -> list:
-    """Get ICE servers for JavaScript client (needs external IP)."""
-    external_ip = _get_external_ip()
-    logger.info(f"Using external IP for TURN: {external_ip}")
+    """Get ICE servers for JavaScript client.
 
-    return [
+    Uses external TURN (metered.ca) if TURN_USERNAME is set,
+    otherwise falls back to self-hosted coturn with external IP.
+    """
+    servers = [
         {"urls": "stun:stun.l.google.com:19302"},
-        {"urls": f"stun:{external_ip}:3478"},
-        {
-            "urls": f"turn:{external_ip}:3478",
-            "username": "turnuser",
-            "credential": "turnpassword",
-        },
-        {
-            "urls": f"turn:{external_ip}:3478?transport=tcp",
-            "username": "turnuser",
-            "credential": "turnpassword",
-        },
     ]
+
+    # Check if external TURN is configured
+    if settings and settings.turn_username and settings.turn_credential:
+        # External TURN server (e.g., metered.ca)
+        servers.extend([
+            {"urls": "stun:stun.relay.metered.ca:80"},
+            {
+                "urls": "turn:global.relay.metered.ca:80",
+                "username": settings.turn_username,
+                "credential": settings.turn_credential,
+            },
+            {
+                "urls": "turn:global.relay.metered.ca:80?transport=tcp",
+                "username": settings.turn_username,
+                "credential": settings.turn_credential,
+            },
+            {
+                "urls": "turn:global.relay.metered.ca:443",
+                "username": settings.turn_username,
+                "credential": settings.turn_credential,
+            },
+            {
+                "urls": "turn:global.relay.metered.ca:443?transport=tcp",
+                "username": settings.turn_username,
+                "credential": settings.turn_credential,
+            },
+        ])
+    else:
+        # Self-hosted coturn - needs external IP for client
+        external_ip = _get_external_ip()
+        servers.extend([
+            {"urls": f"stun:{external_ip}:3478"},
+            {
+                "urls": f"turn:{external_ip}:3478",
+                "username": "turnuser",
+                "credential": "turnpassword",
+            },
+            {
+                "urls": f"turn:{external_ip}:3478?transport=tcp",
+                "username": "turnuser",
+                "credential": "turnpassword",
+            },
+        ])
+
+    return servers
 
 
 class HTTPTTSService(TTSService):
@@ -306,9 +377,10 @@ async def lifespan(app: FastAPI):
 
     logger.info("Starting Orchestrator service...")
 
-    # Initialize WebRTC handler with self-hosted coturn
+    # Initialize WebRTC handler
     webrtc_handler = SmallWebRTCRequestHandler(ice_servers=get_ice_servers())
-    logger.info("WebRTC handler initialized with self-hosted coturn (localhost:3478)")
+    turn_mode = "external TURN (metered.ca)" if settings.turn_username else "self-hosted coturn"
+    logger.info(f"WebRTC handler initialized with {turn_mode}")
 
     # Initialize RAG service
     rag_service = RAGService(settings)
