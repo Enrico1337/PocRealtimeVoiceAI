@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>POC Voice AI - Daily.co</title>
+    <script src="https://unpkg.com/@daily-co/daily-js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #fff;
+        }
+        .container {
+            text-align: center;
+            padding: 2rem;
+            max-width: 500px;
+        }
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+            color: #e94560;
+        }
+        .subtitle {
+            color: #8892b0;
+            margin-bottom: 2rem;
+        }
+        .mode-badge {
+            display: inline-block;
+            background: #4a4a6a;
+            color: #64b5f6;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            margin-bottom: 1rem;
+        }
+        .status {
+            background: rgba(255,255,255,0.1);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+        .status-indicator.disconnected { background: #ff6b6b; }
+        .status-indicator.connecting { background: #ffd93d; }
+        .status-indicator.connected { background: #6bcb77; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        button {
+            background: #e94560;
+            color: white;
+            border: none;
+            padding: 1rem 2rem;
+            font-size: 1.1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 0.5rem;
+        }
+        button:hover:not(:disabled) {
+            background: #ff6b6b;
+            transform: translateY(-2px);
+        }
+        button:disabled {
+            background: #4a4a6a;
+            cursor: not-allowed;
+        }
+        .info-box {
+            background: rgba(0,0,0,0.3);
+            border-radius: 12px;
+            padding: 1rem;
+            margin-top: 2rem;
+            text-align: left;
+            font-size: 0.9rem;
+        }
+        .info-box h3 {
+            color: #64b5f6;
+            margin-bottom: 0.5rem;
+        }
+        .room-url {
+            word-break: break-all;
+            color: #6bcb77;
+            font-family: monospace;
+            font-size: 0.85rem;
+        }
+        .mic-active {
+            animation: mic-pulse 1s infinite;
+        }
+        @keyframes mic-pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(233, 69, 96, 0.4); }
+            50% { box-shadow: 0 0 0 20px rgba(233, 69, 96, 0); }
+        }
+        .error-text {
+            color: #ff6b6b;
+            margin-top: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>POC Voice AI</h1>
+        <p class="subtitle">Self-hosted Realtime Voice Assistant</p>
+        <div class="mode-badge">Daily.co Mode</div>
+
+        <div class="status">
+            <span class="status-indicator disconnected" id="statusIndicator"></span>
+            <span id="statusText">Disconnected</span>
+        </div>
+
+        <button id="connectBtn" onclick="connect()">Connect</button>
+        <button id="disconnectBtn" onclick="disconnect()" disabled>Disconnect</button>
+
+        <div class="info-box" id="roomInfo" style="display: none;">
+            <h3>Room Info</h3>
+            <p>Room: <span class="room-url" id="roomUrl"></span></p>
+        </div>
+
+        <p class="error-text" id="errorText" style="display: none;"></p>
+    </div>
+
+    <script>
+        let callObject = null;
+
+        const statusIndicator = document.getElementById('statusIndicator');
+        const statusText = document.getElementById('statusText');
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const roomInfo = document.getElementById('roomInfo');
+        const roomUrlSpan = document.getElementById('roomUrl');
+        const errorText = document.getElementById('errorText');
+
+        function setStatus(status, text) {
+            statusIndicator.className = 'status-indicator ' + status;
+            statusText.textContent = text;
+        }
+
+        function showError(message) {
+            errorText.textContent = message;
+            errorText.style.display = 'block';
+        }
+
+        function hideError() {
+            errorText.style.display = 'none';
+        }
+
+        async function connect() {
+            try {
+                hideError();
+                setStatus('connecting', 'Creating session...');
+                connectBtn.disabled = true;
+
+                // Request session from server
+                const response = await fetch('/api/session', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Failed to create session');
+                }
+
+                const { room_url, token } = await response.json();
+                console.log('Session created:', room_url);
+
+                // Show room info
+                roomUrlSpan.textContent = room_url;
+                roomInfo.style.display = 'block';
+
+                setStatus('connecting', 'Joining room...');
+
+                // Create Daily call object
+                callObject = DailyIframe.createCallObject({
+                    audioSource: true,
+                    videoSource: false,
+                });
+
+                // Set up event handlers
+                callObject.on('joining-meeting', () => {
+                    console.log('Joining meeting...');
+                    setStatus('connecting', 'Joining...');
+                });
+
+                callObject.on('joined-meeting', () => {
+                    console.log('Joined meeting');
+                    setStatus('connected', 'Connected - Speak now!');
+                    connectBtn.disabled = true;
+                    disconnectBtn.disabled = false;
+                    connectBtn.classList.add('mic-active');
+                });
+
+                callObject.on('left-meeting', () => {
+                    console.log('Left meeting');
+                    handleDisconnect();
+                });
+
+                callObject.on('error', (event) => {
+                    console.error('Daily error:', event);
+                    showError('Connection error: ' + (event.errorMsg || 'Unknown error'));
+                    handleDisconnect();
+                });
+
+                callObject.on('participant-joined', (event) => {
+                    console.log('Participant joined:', event.participant);
+                });
+
+                callObject.on('participant-left', (event) => {
+                    console.log('Participant left:', event.participant);
+                });
+
+                callObject.on('track-started', (event) => {
+                    console.log('Track started:', event.track.kind, 'from', event.participant?.user_name);
+                    if (event.track.kind === 'audio' && !event.participant?.local) {
+                        // Play remote audio
+                        const audio = new Audio();
+                        audio.srcObject = new MediaStream([event.track]);
+                        audio.play().catch(e => console.log('Audio play error:', e));
+                    }
+                });
+
+                // Join the room
+                await callObject.join({
+                    url: room_url,
+                    token: token,
+                });
+
+            } catch (error) {
+                console.error('Connection error:', error);
+                showError(error.message);
+                setStatus('disconnected', 'Connection failed');
+                connectBtn.disabled = false;
+            }
+        }
+
+        function handleDisconnect() {
+            setStatus('disconnected', 'Disconnected');
+            connectBtn.disabled = false;
+            disconnectBtn.disabled = true;
+            connectBtn.classList.remove('mic-active');
+            roomInfo.style.display = 'none';
+        }
+
+        async function disconnect() {
+            if (callObject) {
+                try {
+                    await callObject.leave();
+                    await callObject.destroy();
+                } catch (e) {
+                    console.error('Disconnect error:', e);
+                }
+                callObject = null;
+            }
+            handleDisconnect();
+        }
+
+        // Handle page unload
+        window.addEventListener('beforeunload', disconnect);
+    </script>
+</body>
+</html>

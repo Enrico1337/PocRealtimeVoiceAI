@@ -3,13 +3,44 @@ Pydantic Settings for the Orchestrator service.
 All configuration via environment variables.
 """
 
+from enum import Enum
 from functools import lru_cache
 from pydantic_settings import BaseSettings
 from pydantic import Field
 
 
+class TransportMode(str, Enum):
+    """Transport mode for WebRTC."""
+    DAILY = "daily"
+    LOCAL = "local"
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
+
+    # =========================================================================
+    # Transport Mode
+    # =========================================================================
+    transport_mode: TransportMode = Field(
+        default=TransportMode.DAILY,
+        description="'daily' for Daily.co hosted WebRTC or 'local' for SmallWebRTC"
+    )
+
+    # =========================================================================
+    # Daily.co Configuration (only used when transport_mode=daily)
+    # =========================================================================
+    daily_api_key: str = Field(
+        default="",
+        description="Daily.co API key (from https://dashboard.daily.co/developers)"
+    )
+    daily_bot_name: str = Field(
+        default="Voice Assistant",
+        description="Bot display name in Daily room"
+    )
+    daily_room_expiry_time: int = Field(
+        default=3600,
+        description="Room expiry time in seconds"
+    )
 
     # =========================================================================
     # Service URLs
@@ -56,22 +87,6 @@ class Settings(BaseSettings):
     host: str = Field(default="0.0.0.0", description="Server host")
     port: int = Field(default=7860, description="Server port")
     log_level: str = Field(default="INFO", description="Logging level")
-
-    # =========================================================================
-    # WebRTC / TURN Server Configuration
-    # =========================================================================
-    turn_server_url: str = Field(
-        default="turn:global.relay.metered.ca:443?transport=tcp",
-        description="TURN server URL"
-    )
-    turn_username: str = Field(
-        default="",
-        description="TURN server username (set via .env)"
-    )
-    turn_credential: str = Field(
-        default="",
-        description="TURN server credential (set via .env)"
-    )
 
     # =========================================================================
     # Timeouts (in seconds)
