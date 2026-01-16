@@ -60,15 +60,15 @@ def get_ice_servers() -> list:
     if settings and settings.turn_username and settings.turn_credential:
         # External TURN only - NO STUN to force relay behavior on server side
         # aiortc will only generate TURN candidates when no STUN is available
-        # TCP/443 first (most firewall-friendly), aiortc uses first server
+        # UDP TURN (client generates UDP relay candidates successfully, TCP causes transport errors)
         return [
             RTCIceServer(
-                urls="turn:global.relay.metered.ca:443?transport=tcp",
+                urls="turn:global.relay.metered.ca:443",  # UDP on port 443
                 username=settings.turn_username,
                 credential=settings.turn_credential,
             ),
             RTCIceServer(
-                urls="turn:global.relay.metered.ca:80?transport=tcp",
+                urls="turn:global.relay.metered.ca:80",   # UDP on port 80
                 username=settings.turn_username,
                 credential=settings.turn_credential,
             ),
