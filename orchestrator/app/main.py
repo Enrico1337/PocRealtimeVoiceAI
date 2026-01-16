@@ -51,18 +51,16 @@ webrtc_handler: Optional[SmallWebRTCRequestHandler] = None
 def get_ice_servers() -> list:
     """Build ICE server list for server-side (aiortc).
 
-    Uses external TURN (metered.ca) if TURN_USERNAME is set,
-    otherwise falls back to self-hosted coturn.
-    """
-    servers = [
-        RTCIceServer(urls="stun:stun.l.google.com:19302"),
-    ]
+    When using external TURN: Only TURN servers (NO STUN) to force relay-only.
+    aiortc doesn't support iceTransportPolicy, so this is the workaround.
 
+    For local development with coturn: Include STUN for direct connections.
+    """
     # Check if external TURN is configured
     if settings and settings.turn_username and settings.turn_credential:
-        # External TURN server (e.g., metered.ca)
-        servers.extend([
-            RTCIceServer(urls="stun:stun.relay.metered.ca:80"),
+        # External TURN only - NO STUN to force relay behavior on server side
+        # aiortc will only generate TURN candidates when no STUN is available
+        return [
             RTCIceServer(
                 urls="turn:global.relay.metered.ca:80",
                 username=settings.turn_username,
@@ -83,10 +81,12 @@ def get_ice_servers() -> list:
                 username=settings.turn_username,
                 credential=settings.turn_credential,
             ),
-        ])
+        ]
     else:
         # Self-hosted coturn on same host (network_mode: host)
-        servers.extend([
+        # Include STUN for local development where direct UDP works
+        return [
+            RTCIceServer(urls="stun:stun.l.google.com:19302"),
             RTCIceServer(urls="stun:localhost:3478"),
             RTCIceServer(
                 urls="turn:localhost:3478",
@@ -98,9 +98,7 @@ def get_ice_servers() -> list:
                 username="turnuser",
                 credential="turnpassword",
             ),
-        ])
-
-    return servers
+        ]
 
 
 def _get_external_ip() -> str:
@@ -120,18 +118,16 @@ def _get_external_ip() -> str:
 def get_ice_servers_for_client() -> list:
     """Get ICE servers for JavaScript client.
 
-    Uses external TURN (metered.ca) if TURN_USERNAME is set,
-    otherwise falls back to self-hosted coturn with external IP.
-    """
-    servers = [
-        {"urls": "stun:stun.l.google.com:19302"},
-    ]
+    When using external TURN: Only TURN servers (NO STUN) to force relay-only.
+    Combined with iceTransportPolicy: 'relay' on client, ensures only relay candidates.
 
+    For local development with coturn: Include STUN for direct connections.
+    """
     # Check if external TURN is configured
     if settings and settings.turn_username and settings.turn_credential:
-        # External TURN server (e.g., metered.ca)
-        servers.extend([
-            {"urls": "stun:stun.relay.metered.ca:80"},
+        # External TURN only - NO STUN to force relay behavior
+        # Client also uses iceTransportPolicy: 'relay' for double enforcement
+        return [
             {
                 "urls": "turn:global.relay.metered.ca:80",
                 "username": settings.turn_username,
@@ -152,11 +148,13 @@ def get_ice_servers_for_client() -> list:
                 "username": settings.turn_username,
                 "credential": settings.turn_credential,
             },
-        ])
+        ]
     else:
         # Self-hosted coturn - needs external IP for client
+        # Include STUN for local development where direct UDP works
         external_ip = _get_external_ip()
-        servers.extend([
+        return [
+            {"urls": "stun:stun.l.google.com:19302"},
             {"urls": f"stun:{external_ip}:3478"},
             {
                 "urls": f"turn:{external_ip}:3478",
@@ -168,9 +166,7 @@ def get_ice_servers_for_client() -> list:
                 "username": "turnuser",
                 "credential": "turnpassword",
             },
-        ])
-
-    return servers
+        ]
 
 
 class HTTPTTSService(TTSService):
@@ -378,9 +374,18 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Orchestrator service...")
 
     # Initialize WebRTC handler
-    webrtc_handler = SmallWebRTCRequestHandler(ice_servers=get_ice_servers())
+    ice_servers = get_ice_servers()
+    webrtc_handler = SmallWebRTCRequestHandler(ice_servers=ice_servers)
+
+    # Detailed ICE server logging
     turn_mode = "external TURN (metered.ca)" if settings.turn_username else "self-hosted coturn"
     logger.info(f"WebRTC handler initialized with {turn_mode}")
+    logger.info(f"ICE servers configured: {len(ice_servers)} servers")
+    for i, server in enumerate(ice_servers):
+        # RTCIceServer.urls can be a string or list
+        urls = server.urls if isinstance(server.urls, str) else ", ".join(server.urls)
+        has_creds = bool(server.username)
+        logger.info(f"  [{i}] {urls} (auth: {has_creds})")
 
     # Initialize RAG service
     rag_service = RAGService(settings)
@@ -642,6 +647,32 @@ CLIENT_HTML = """
                 localStream.getTracks().forEach(track => {
                     pc.addTrack(track, localStream);
                 });
+
+                // ICE connection state monitoring
+                pc.oniceconnectionstatechange = () => {
+                    console.log('ICE connection state:', pc.iceConnectionState);
+                    const stateMap = {
+                        'new': ['connecting', 'Initializing...'],
+                        'checking': ['connecting', 'Checking connectivity...'],
+                        'connected': ['connected', 'Connected!'],
+                        'completed': ['connected', 'Connected (completed)'],
+                        'disconnected': ['disconnected', 'Disconnected'],
+                        'failed': ['disconnected', 'Connection failed'],
+                        'closed': ['disconnected', 'Connection closed']
+                    };
+                    const [status, text] = stateMap[pc.iceConnectionState] || ['connecting', pc.iceConnectionState];
+                    setStatus(status, text);
+                };
+
+                // ICE candidate logging
+                pc.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        const c = event.candidate;
+                        console.log('ICE candidate:', c.type || 'unknown', c.protocol, c.address, c.port, c.candidate);
+                    } else {
+                        console.log('ICE gathering complete');
+                    }
+                };
 
                 // Handle remote audio
                 pc.ontrack = (event) => {
