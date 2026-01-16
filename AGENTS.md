@@ -9,17 +9,16 @@ This document provides comprehensive instructions for AI agents to diagnose and 
 │                     ARCHITECTURE                                 │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│   Browser (WebRTC) ◄──────────────────────────────────────┐     │
-│        │                                                   │     │
-│        │ Port 7860                          ┌─────────┐   │     │
-│        │                                    │ COTURN  │───┘     │
-│        ▼                                    │  :3478  │         │
-│   ┌─────────────────────────────────────────┴─────────┴─────┐   │
-│   │              ORCHESTRATOR (Python/Pipecat)               │   │
-│   │  - FastAPI server on :7860                               │   │
-│   │  - Serves WebRTC client HTML                             │   │
-│   │  - Manages voice pipeline                                │   │
-│   │  - RAG retrieval (Qdrant + BGE-M3)                       │   │
+│   Browser (WebRTC) ◄────────────────────────────────────────┐   │
+│        │                                                     │   │
+│        │ Port 7860 (Daily.co or Local transport)            │   │
+│        ▼                                                     │   │
+│   ┌──────────────────────────────────────────────────────────┘  │
+│   │              ORCHESTRATOR (Python/Pipecat)                   │
+│   │  - FastAPI server on :7860                                   │
+│   │  - Transport: Daily.co (cloud) or Local (development)       │
+│   │  - Manages voice pipeline                                    │
+│   │  - RAG retrieval (Qdrant + BGE-M3)                           │
 │   └─────┬───────────┬───────────┬───────────┬───────────────┘   │
 │         │           │           │           │                    │
 │         ▼           ▼           ▼           ▼                    │
@@ -51,11 +50,20 @@ This document provides comprehensive instructions for AI agents to diagnose and 
 │   ├── requirements.txt
 │   └── app/
 │       ├── __init__.py
-│       ├── main.py                 # FastAPI + WebRTC entry point
+│       ├── main.py                 # FastAPI entry point
 │       ├── pipeline.py             # Pipecat voice pipeline
 │       ├── rag.py                  # Qdrant RAG implementation
 │       ├── settings.py             # Pydantic settings
-│       └── telemetry.py            # Metrics/logging
+│       ├── telemetry.py            # Metrics/logging
+│       ├── transport/              # WebRTC transport abstraction
+│       │   ├── __init__.py
+│       │   ├── types.py            # Transport protocols/types
+│       │   ├── factory.py          # Transport factory
+│       │   ├── daily.py            # Daily.co transport (cloud)
+│       │   └── local.py            # Local WebRTC transport
+│       └── clients/                # Browser clients
+│           ├── daily_client.html   # Daily.co client
+│           └── local_client.html   # Local WebRTC client
 └── tts/
     ├── Dockerfile
     ├── requirements.txt
@@ -475,15 +483,16 @@ docker stats poc-orchestrator --no-stream
 **Symptoms:**
 ```
 Browser shows "Connecting..." indefinitely
-ICE connection failed
 No audio in/out
 ```
 
 **Diagnosis:**
 ```bash
+# Check transport mode
+docker compose logs orchestrator | grep -i "transport mode"
+
 # Check orchestrator logs for WebRTC errors
 docker compose logs orchestrator | grep -i webrtc
-docker compose logs orchestrator | grep -i ice
 
 # Check if port 7860 is accessible
 curl -s http://localhost:7860/health
@@ -491,31 +500,26 @@ curl -s http://localhost:7860/health
 
 **Solutions:**
 
-A) Port not exposed correctly (vast.ai):
+A) Daily.co transport (cloud deployment):
 ```bash
-# Verify port mapping
-docker compose ps orchestrator
+# Check that DAILY_API_KEY is set
+grep DAILY_API_KEY .env
 
-# On vast.ai: Ensure port 7860 is in "Direct Port Mappings"
-# Format: 7860/http
+# Check Daily.co API connection
+docker compose logs orchestrator | grep -i daily
+
+# If Daily.co fails, verify:
+# - API key is valid (from dashboard.daily.co)
+# - TRANSPORT_MODE=daily is set
 ```
 
-B) STUN server not reachable:
+B) Local transport (development):
 ```bash
-# Test STUN connectivity from container
-docker compose exec orchestrator python -c "
-import asyncio
-from aiortc import RTCPeerConnection, RTCConfiguration, RTCIceServer
+# For local development, set:
+TRANSPORT_MODE=local
 
-async def test():
-    config = RTCConfiguration(iceServers=[RTCIceServer(urls='stun:stun.l.google.com:19302')])
-    pc = RTCPeerConnection(config)
-    offer = await pc.createOffer()
-    print('STUN test passed')
-    await pc.close()
-
-asyncio.run(test())
-"
+# Local transport works without external services
+# but requires direct network access (localhost only)
 ```
 
 C) Browser microphone not allowed:
@@ -523,6 +527,15 @@ C) Browser microphone not allowed:
 - Check browser console for permission errors
 - Ensure HTTPS or localhost (WebRTC requires secure context)
 - On vast.ai: Use the HTTPS URL provided
+```
+
+D) Port not exposed correctly (vast.ai):
+```bash
+# Verify port mapping
+docker compose ps orchestrator
+
+# On vast.ai: Ensure port 7860 is in "Direct Port Mappings"
+# Format: 7860/http
 ```
 
 ---
@@ -647,87 +660,15 @@ docker compose logs <service> 2>&1 | grep -A 20 "Traceback"
 
 ---
 
-### ISSUE 11: WebRTC Connection Issues (TURN/ICE)
-
-**Symptoms:**
-```
-ICE connection state is checking, connection is connecting
-Timeout establishing the connection to the remote peer
-WebRTC stuck at "Connecting"
-```
-
-**Diagnosis:**
-```bash
-# Check coturn is running and healthy
-docker compose ps coturn
-
-# Check coturn logs
-docker compose logs coturn
-
-# Check orchestrator TURN configuration
-docker compose logs orchestrator | grep -i "coturn\|TURN"
-
-# Test TURN server connectivity
-docker compose --profile test-coturn run --rm test-coturn
-```
-
-**Cause:**
-Self-hosted coturn TURN server not running or not reachable. This happens when:
-- Coturn container not started or unhealthy
-- Port 3478 not accessible (firewall/vast.ai port mapping)
-- Network mode issues
-
-**Solutions:**
-
-A) Verify coturn is running:
-```bash
-# Start coturn if not running
-docker compose up -d coturn
-
-# Check health status
-docker compose ps coturn
-# Should show "healthy"
-
-# Check logs for errors
-docker compose logs coturn --tail=50
-```
-
-B) Test TURN server:
-```bash
-# Run the built-in TURN test
-docker compose --profile test-coturn run --rm test-coturn
-
-# Expected output: Connection statistics showing successful relay
-```
-
-C) For remote access (vast.ai/cloud):
-```bash
-# Ensure ports are exposed in cloud console:
-# - 7860/http (Web UI)
-# - 3478/tcp (TURN TCP)
-# - 3478/udp (TURN UDP)
-
-# On vast.ai: Add to "Direct Port Mappings"
-```
-
-D) Manual TURN test:
-```bash
-# Use the WebRTC samples tester:
-# https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/
-# Add: turn:<your-server-ip>:3478
-# Username: turnuser
-# Credential: turnpassword
-# If "relay" candidates appear, TURN is working
-```
-
----
-
 ## Vast.ai Specific Issues
+
+> **Note:** With Daily.co transport, vast.ai deployment is simplified - only port 7860 needs to be exposed.
+> Set `TRANSPORT_MODE=daily` and `DAILY_API_KEY=your-key` in .env.
 
 ### ISSUE V1: Port not accessible
 
 ```bash
-# On vast.ai, ports must be explicitly exposed
+# On vast.ai, only port 7860 needs to be exposed (Daily.co handles WebRTC relay)
 # In the instance configuration, add:
 # Direct Port Mappings: 7860/http
 
@@ -855,6 +796,8 @@ httpx.ReadTimeout: timed out
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `TRANSPORT_MODE` | `daily` | Transport mode (`daily` or `local`) |
+| `DAILY_API_KEY` | `` | Daily.co API key (required for daily mode) |
 | `STT_MODEL` | `Systran/faster-distil-whisper-large-v3` | Whisper model |
 | `STT_LANGUAGE` | `de` | Default STT language |
 | `STT_DEVICE` | `cuda` | STT device (cuda/cpu) |
@@ -881,7 +824,8 @@ httpx.ReadTimeout: timed out
 | TTS fails | Set `TTS_DEVICE=cpu` |
 | RAG empty | Check kb/ has .md files, restart orchestrator |
 | Port blocked | Expose 7860 in vast.ai dashboard |
-| WebRTC fails | Use HTTPS URL on vast.ai |
+| WebRTC fails (cloud) | Set `TRANSPORT_MODE=daily` and valid `DAILY_API_KEY` |
+| WebRTC fails (local) | Set `TRANSPORT_MODE=local`, use localhost |
 
 ---
 

@@ -109,34 +109,6 @@ services:
       - "8003:8000"
 
   # =============================================================================
-  # COTURN - Self-hosted TURN Server for WebRTC
-  # =============================================================================
-  coturn:
-    image: coturn/coturn:latest
-    container_name: poc-coturn
-    restart: unless-stopped
-    network_mode: host
-    command:
-      - -n
-      - --log-file=stdout
-      - --listening-port=3478
-      - --tls-listening-port=5349
-      - --min-port=49152
-      - --max-port=49200
-      - --realm=poc-voice
-      - --user=turnuser:turnpassword
-      - --lt-cred-mech
-      - --fingerprint
-      - --no-cli
-      - --no-multicast-peers
-    healthcheck:
-      test: ["CMD", "turnutils_stunclient", "localhost"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-
-  # =============================================================================
   # ORCHESTRATOR - Main Voice Pipeline
   # =============================================================================
   orchestrator:
@@ -162,12 +134,11 @@ services:
       - VAD_SILENCE_MS=${VAD_SILENCE_MS:-800}
       - RAG_TOP_K=${RAG_TOP_K:-4}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      # TURN server credentials (for external TURN like metered.ca)
-      # IMPORTANT: Use a regional TURN_HOST (e.g., eu.relay.metered.ca) instead of
-      # global.relay.metered.ca to ensure client and server connect to the SAME instance
-      - TURN_HOST=${TURN_HOST:-eu.relay.metered.ca}
-      - TURN_USERNAME=${TURN_USERNAME:-}
-      - TURN_CREDENTIAL=${TURN_CREDENTIAL:-}
+      # Transport config
+      - TRANSPORT_MODE=${TRANSPORT_MODE:-daily}
+      - DAILY_API_KEY=${DAILY_API_KEY:-}
+      - DAILY_BOT_NAME=${DAILY_BOT_NAME:-Voice Assistant}
+      - DAILY_ROOM_EXPIRY_TIME=${DAILY_ROOM_EXPIRY_TIME:-3600}
     volumes:
       - ./kb:/app/kb:ro
       - hf-cache:/root/.cache/huggingface
@@ -198,18 +169,3 @@ services:
     container_name: poc-test
     command: ["python", "test_imports.py"]
     profiles: ["test"]
-
-  # =============================================================================
-  # TEST-COTURN - TURN server connectivity test
-  # Usage: docker compose --profile test-coturn run --rm test-coturn
-  # =============================================================================
-  test-coturn:
-    image: coturn/coturn:latest
-    container_name: poc-test-coturn
-    network_mode: host
-    entrypoint: ["turnutils_uclient"]
-    command: ["-u", "turnuser", "-w", "turnpassword", "-p", "3478", "localhost"]
-    profiles: ["test-coturn"]
-    depends_on:
-      coturn:
-        condition: service_healthy

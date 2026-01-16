@@ -78,7 +78,6 @@ Click "Connect" and start speaking!
 | Service | Port | Description |
 |---------|------|-------------|
 | orchestrator | 7860 (exposed) | Main pipeline + Web UI |
-| coturn | 3478 (host) | Self-hosted TURN server for WebRTC |
 | stt | 8001 (exposed) | faster-whisper-server |
 | llm | 8002 (exposed) | vLLM OpenAI server |
 | tts | 8003 (exposed) | Chatterbox TTS |
@@ -103,9 +102,9 @@ RAG_TOP_K=4                 # Number of RAG results
 LLM_MAX_CONTEXT=32768       # Context window
 LLM_GPU_MEMORY=0.85         # GPU memory utilization
 
-# WebRTC / TURN Server
-# Self-hosted coturn is included - no external credentials needed
-# Default credentials: turnuser / turnpassword (see docker-compose.yml)
+# Transport Mode
+TRANSPORT_MODE=daily        # "daily" (default) or "local"
+DAILY_API_KEY=              # Required for cloud deployment (vast.ai)
 ```
 
 ## Knowledge Base
@@ -124,15 +123,19 @@ Place your documents in the `./kb` directory:
 
 ## Cloud Deployment (vast.ai)
 
-See **[VAST_AI_DEPLOYMENT.md](VAST_AI_DEPLOYMENT.md)** for detailed instructions.
+With Daily.co transport, cloud deployment requires only port 7860 (no TURN server needed).
 
-Quick start:
-1. Select a GPU instance (RTX 4090 / 24GB+ VRAM)
-2. Clone repo: `git clone <repo-url> && cd PocRealtimeVoiceAI`
-3. Configure: `cp .env.example .env`
-4. Expose ports in vast.ai console (Direct Port Mappings):
-   - `7860/http` (Web UI)
-   - `3478/tcp` and `3478/udp` (TURN server)
+1. Get Daily.co API key from [dashboard.daily.co](https://dashboard.daily.co)
+2. Select a GPU instance (RTX 4090 / 24GB+ VRAM)
+3. Clone and configure:
+   ```bash
+   git clone <repo-url> && cd PocRealtimeVoiceAI
+   cp .env.example .env
+   # Set in .env:
+   TRANSPORT_MODE=daily
+   DAILY_API_KEY=your-api-key
+   ```
+4. Expose port `7860/http` in vast.ai console
 5. Start: `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d`
 6. Access via the vast.ai assigned URL
 
@@ -218,22 +221,11 @@ Testing pipecat imports...
 All imports OK!
 ```
 
-### Coturn TURN Server Test
-
-Test TURN server connectivity (requires coturn to be running):
-
-```bash
-docker compose --profile test-coturn run --rm test-coturn
-```
-
-Expected output: Connection statistics showing successful relay through the TURN server.
-
 ## Documentation
 
 | Document | Description |
 |----------|-------------|
 | [README.md](README.md) | This file - Quick start and overview |
-| [VAST_AI_DEPLOYMENT.md](VAST_AI_DEPLOYMENT.md) | Detailed vast.ai deployment guide |
 | [AGENTS.md](AGENTS.md) | Comprehensive troubleshooting for AI agents |
 | [.env.example](.env.example) | All configuration options |
 
