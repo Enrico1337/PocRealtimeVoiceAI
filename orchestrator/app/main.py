@@ -60,24 +60,15 @@ def get_ice_servers() -> list:
     if settings and settings.turn_username and settings.turn_credential:
         # External TURN only - NO STUN to force relay behavior on server side
         # aiortc will only generate TURN candidates when no STUN is available
+        # TCP/443 first (most firewall-friendly), aiortc uses first server
         return [
             RTCIceServer(
-                urls="turn:global.relay.metered.ca:80",
+                urls="turn:global.relay.metered.ca:443?transport=tcp",
                 username=settings.turn_username,
                 credential=settings.turn_credential,
             ),
             RTCIceServer(
                 urls="turn:global.relay.metered.ca:80?transport=tcp",
-                username=settings.turn_username,
-                credential=settings.turn_credential,
-            ),
-            RTCIceServer(
-                urls="turn:global.relay.metered.ca:443",
-                username=settings.turn_username,
-                credential=settings.turn_credential,
-            ),
-            RTCIceServer(
-                urls="turn:global.relay.metered.ca:443?transport=tcp",
                 username=settings.turn_username,
                 credential=settings.turn_credential,
             ),
@@ -127,9 +118,10 @@ def get_ice_servers_for_client() -> list:
     if settings and settings.turn_username and settings.turn_credential:
         # External TURN only - NO STUN to force relay behavior
         # Client also uses iceTransportPolicy: 'relay' for double enforcement
+        # TCP/443 first (most firewall-friendly)
         return [
             {
-                "urls": "turn:global.relay.metered.ca:80",
+                "urls": "turn:global.relay.metered.ca:443?transport=tcp",
                 "username": settings.turn_username,
                 "credential": settings.turn_credential,
             },
@@ -144,7 +136,7 @@ def get_ice_servers_for_client() -> list:
                 "credential": settings.turn_credential,
             },
             {
-                "urls": "turn:global.relay.metered.ca:443?transport=tcp",
+                "urls": "turn:global.relay.metered.ca:80",
                 "username": settings.turn_username,
                 "credential": settings.turn_credential,
             },
@@ -386,6 +378,15 @@ async def lifespan(app: FastAPI):
         urls = server.urls if isinstance(server.urls, str) else ", ".join(server.urls)
         has_creds = bool(server.username)
         logger.info(f"  [{i}] {urls} (auth: {has_creds})")
+
+    # Credential format validation for metered.ca
+    if settings.turn_username and settings.turn_credential:
+        # metered.ca username is typically 24 hex chars
+        if len(settings.turn_username) != 24:
+            logger.warning(f"TURN_USERNAME length is {len(settings.turn_username)}, expected 24. "
+                          f"Did you use the API key instead of username?")
+        logger.info(f"TURN credentials: username={settings.turn_username[:8]}... "
+                   f"(length: {len(settings.turn_username)})")
 
     # Initialize RAG service
     rag_service = RAGService(settings)
@@ -698,6 +699,19 @@ CLIENT_HTML = """
                         };
                     }
                 });
+
+                // Check if any relay candidates were generated
+                const candidates = pc.localDescription?.sdp.match(/a=candidate/g)?.length || 0;
+                const relayCandidates = pc.localDescription?.sdp.match(/typ relay/g)?.length || 0;
+                console.log(`ICE candidates: ${candidates} total, ${relayCandidates} relay`);
+
+                if (candidates === 0) {
+                    console.error('TURN AUTHENTICATION FAILED: No relay candidates generated.');
+                    console.error('Check TURN_USERNAME - should be the "username" from metered.ca, NOT the API key!');
+                    setStatus('disconnected', 'TURN auth failed - check credentials');
+                    connectBtn.disabled = false;
+                    return;
+                }
 
                 // Send offer to server
                 const response = await fetch('/api/offer', {
