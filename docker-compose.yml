@@ -163,6 +163,9 @@ services:
       - RAG_TOP_K=${RAG_TOP_K:-4}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       # TURN server credentials (for external TURN like metered.ca)
+      # IMPORTANT: Use a regional TURN_HOST (e.g., eu.relay.metered.ca) instead of
+      # global.relay.metered.ca to ensure client and server connect to the SAME instance
+      - TURN_HOST=${TURN_HOST:-eu.relay.metered.ca}
       - TURN_USERNAME=${TURN_USERNAME:-}
       - TURN_CREDENTIAL=${TURN_CREDENTIAL:-}
     volumes:

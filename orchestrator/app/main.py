@@ -55,20 +55,25 @@ def get_ice_servers() -> list:
     aiortc doesn't support iceTransportPolicy, so this is the workaround.
 
     For local development with coturn: Include STUN for direct connections.
+
+    IMPORTANT: Use TURN_HOST env var to specify a regional server (e.g., eu.relay.metered.ca)
+    instead of global.relay.metered.ca to avoid GeoDNS/Anycast routing to different instances.
     """
     # Check if external TURN is configured
     if settings and settings.turn_username and settings.turn_credential:
         # External TURN only - NO STUN to force relay behavior on server side
         # aiortc will only generate TURN candidates when no STUN is available
         # UDP TURN (client generates UDP relay candidates successfully, TCP causes transport errors)
+        # Use regional server to ensure client and server connect to the SAME TURN instance
+        turn_host = os.getenv("TURN_HOST", "eu.relay.metered.ca")
         return [
             RTCIceServer(
-                urls="turn:global.relay.metered.ca:443",  # UDP on port 443
+                urls=f"turn:{turn_host}:443",  # UDP on port 443
                 username=settings.turn_username,
                 credential=settings.turn_credential,
             ),
             RTCIceServer(
-                urls="turn:global.relay.metered.ca:80",   # UDP on port 80
+                urls=f"turn:{turn_host}:80",   # UDP on port 80
                 username=settings.turn_username,
                 credential=settings.turn_credential,
             ),
@@ -113,30 +118,35 @@ def get_ice_servers_for_client() -> list:
     Combined with iceTransportPolicy: 'relay' on client, ensures only relay candidates.
 
     For local development with coturn: Include STUN for direct connections.
+
+    IMPORTANT: Use TURN_HOST env var to specify a regional server (e.g., eu.relay.metered.ca)
+    instead of global.relay.metered.ca to avoid GeoDNS/Anycast routing to different instances.
     """
     # Check if external TURN is configured
     if settings and settings.turn_username and settings.turn_credential:
         # External TURN only - NO STUN to force relay behavior
         # Client also uses iceTransportPolicy: 'relay' for double enforcement
         # TCP/443 first (most firewall-friendly)
+        # Use regional server to ensure client and server connect to the SAME TURN instance
+        turn_host = os.getenv("TURN_HOST", "eu.relay.metered.ca")
         return [
             {
-                "urls": "turn:global.relay.metered.ca:443?transport=tcp",
+                "urls": f"turn:{turn_host}:443?transport=tcp",
                 "username": settings.turn_username,
                 "credential": settings.turn_credential,
             },
             {
-                "urls": "turn:global.relay.metered.ca:80?transport=tcp",
+                "urls": f"turn:{turn_host}:80?transport=tcp",
                 "username": settings.turn_username,
                 "credential": settings.turn_credential,
             },
             {
-                "urls": "turn:global.relay.metered.ca:443",
+                "urls": f"turn:{turn_host}:443",
                 "username": settings.turn_username,
                 "credential": settings.turn_credential,
             },
             {
-                "urls": "turn:global.relay.metered.ca:80",
+                "urls": f"turn:{turn_host}:80",
                 "username": settings.turn_username,
                 "credential": settings.turn_credential,
             },
@@ -396,7 +406,11 @@ async def lifespan(app: FastAPI):
     webrtc_handler = SmallWebRTCRequestHandler(ice_servers=ice_servers)
 
     # Detailed ICE server logging
-    turn_mode = "external TURN (metered.ca)" if settings.turn_username else "self-hosted coturn"
+    if settings.turn_username:
+        turn_host = os.getenv("TURN_HOST", "eu.relay.metered.ca")
+        turn_mode = f"external TURN ({turn_host})"
+    else:
+        turn_mode = "self-hosted coturn"
     logger.info(f"WebRTC handler initialized with {turn_mode}")
     logger.info(f"ICE servers configured: {len(ice_servers)} servers")
     for i, server in enumerate(ice_servers):
