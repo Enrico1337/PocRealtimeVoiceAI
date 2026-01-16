@@ -42,10 +42,31 @@ from .telemetry import SessionMetrics, setup_logging
 
 logger = logging.getLogger(__name__)
 
+
+async def resolve_turn_host(hostname: str) -> str:
+    """Resolve TURN hostname to IP address to ensure both peers use the same server.
+
+    TURN providers like metered.ca use load balancing/GeoDNS. Without resolving
+    to a specific IP, client and server may connect to different TURN instances
+    that cannot relay traffic between each other.
+    """
+    import socket
+    try:
+        result = socket.getaddrinfo(hostname, 443, socket.AF_INET, socket.SOCK_STREAM)
+        if result:
+            ip = result[0][4][0]
+            logger.info(f"Resolved TURN host {hostname} -> {ip}")
+            return ip
+    except Exception as e:
+        logger.warning(f"Failed to resolve TURN host {hostname}: {e}, using hostname")
+    return hostname
+
+
 # Global instances
 rag_service: Optional[RAGService] = None
 settings: Optional[Settings] = None
 webrtc_handler: Optional[SmallWebRTCRequestHandler] = None
+turn_resolved_ip: Optional[str] = None
 
 
 def get_ice_servers() -> list:
@@ -56,16 +77,16 @@ def get_ice_servers() -> list:
 
     For local development with coturn: Include STUN for direct connections.
 
-    IMPORTANT: Use TURN_HOST env var to specify a regional server (e.g., eu.relay.metered.ca)
-    instead of global.relay.metered.ca to avoid GeoDNS/Anycast routing to different instances.
+    Uses pre-resolved TURN IP to ensure both client and server connect to the same
+    TURN instance (avoids GeoDNS/load balancing issues with metered.ca).
     """
     # Check if external TURN is configured
     if settings and settings.turn_username and settings.turn_credential:
         # External TURN only - NO STUN to force relay behavior on server side
         # aiortc will only generate TURN candidates when no STUN is available
         # UDP TURN (client generates UDP relay candidates successfully, TCP causes transport errors)
-        # Use regional server to ensure client and server connect to the SAME TURN instance
-        turn_host = os.getenv("TURN_HOST", "eu.relay.metered.ca")
+        # Use pre-resolved IP to ensure same TURN instance as client
+        turn_host = turn_resolved_ip or os.getenv("TURN_HOST", "eu.relay.metered.ca")
         return [
             RTCIceServer(
                 urls=f"turn:{turn_host}:443",  # UDP on port 443
@@ -119,16 +140,16 @@ def get_ice_servers_for_client() -> list:
 
     For local development with coturn: Include STUN for direct connections.
 
-    IMPORTANT: Use TURN_HOST env var to specify a regional server (e.g., eu.relay.metered.ca)
-    instead of global.relay.metered.ca to avoid GeoDNS/Anycast routing to different instances.
+    Uses pre-resolved TURN IP to ensure both client and server connect to the same
+    TURN instance (avoids GeoDNS/load balancing issues with metered.ca).
     """
     # Check if external TURN is configured
     if settings and settings.turn_username and settings.turn_credential:
         # External TURN only - NO STUN to force relay behavior
         # Client also uses iceTransportPolicy: 'relay' for double enforcement
         # TCP/443 first (most firewall-friendly)
-        # Use regional server to ensure client and server connect to the SAME TURN instance
-        turn_host = os.getenv("TURN_HOST", "eu.relay.metered.ca")
+        # Use pre-resolved IP to ensure same TURN instance as server
+        turn_host = turn_resolved_ip or os.getenv("TURN_HOST", "eu.relay.metered.ca")
         return [
             {
                 "urls": f"turn:{turn_host}:443?transport=tcp",
@@ -393,7 +414,7 @@ async def run_bot(webrtc_connection: SmallWebRTCConnection) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
-    global rag_service, settings, webrtc_handler
+    global rag_service, settings, webrtc_handler, turn_resolved_ip
 
     # Startup
     settings = get_settings()
@@ -401,13 +422,19 @@ async def lifespan(app: FastAPI):
 
     logger.info("Starting Orchestrator service...")
 
+    # Resolve TURN host to IP if external TURN is configured
+    # This ensures both client and server connect to the same TURN instance
+    if settings.turn_username and settings.turn_credential:
+        turn_host = os.getenv("TURN_HOST", "eu.relay.metered.ca")
+        turn_resolved_ip = await resolve_turn_host(turn_host)
+
     # Initialize WebRTC handler
     ice_servers = get_ice_servers()
     webrtc_handler = SmallWebRTCRequestHandler(ice_servers=ice_servers)
 
     # Detailed ICE server logging
     if settings.turn_username:
-        turn_host = os.getenv("TURN_HOST", "eu.relay.metered.ca")
+        turn_host = turn_resolved_ip or os.getenv("TURN_HOST", "eu.relay.metered.ca")
         turn_mode = f"external TURN ({turn_host})"
     else:
         turn_mode = "self-hosted coturn"
