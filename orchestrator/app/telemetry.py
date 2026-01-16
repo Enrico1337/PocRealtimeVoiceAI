@@ -145,6 +145,8 @@ def track_latency(
 
 def setup_logging(level: str = "INFO") -> None:
     """Configure logging for the application."""
+    import os
+
     logging.basicConfig(
         level=getattr(logging, level.upper(), logging.INFO),
         format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
@@ -154,5 +156,11 @@ def setup_logging(level: str = "INFO") -> None:
     # Reduce noise from third-party libraries
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
-    logging.getLogger("aioice").setLevel(logging.WARNING)
+
+    # aioice logging: DEBUG for TURN allocation/connectivity debugging
+    if os.getenv("DEBUG_ICE", "false").lower() == "true":
+        logging.getLogger("aioice").setLevel(logging.DEBUG)
+    else:
+        logging.getLogger("aioice").setLevel(logging.INFO)  # Show TURN auth
+
     logging.getLogger("aiortc").setLevel(logging.INFO)

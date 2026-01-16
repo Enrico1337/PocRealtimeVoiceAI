@@ -161,6 +161,32 @@ def get_ice_servers_for_client() -> list:
         ]
 
 
+def parse_ice_candidates(sdp: str) -> list[dict]:
+    """Parse ICE candidates from SDP for logging.
+
+    Extracts candidate information including protocol, address, port, and type
+    (host/srflx/relay) from SDP offer/answer for debugging ICE connectivity.
+    """
+    candidates = []
+    for line in sdp.split('\n'):
+        if 'a=candidate:' not in line:
+            continue
+        parts = line.strip().split()
+        candidate = {
+            'protocol': parts[2].lower() if len(parts) > 2 else 'unknown',
+            'address': parts[4] if len(parts) > 4 else 'unknown',
+            'port': parts[5] if len(parts) > 5 else 'unknown',
+            'type': 'unknown'
+        }
+        # Extract type (host/srflx/relay)
+        for i, part in enumerate(parts):
+            if part == 'typ' and i + 1 < len(parts):
+                candidate['type'] = parts[i + 1]
+                break
+        candidates.append(candidate)
+    return candidates
+
+
 class HTTPTTSService(TTSService):
     """TTS Service that calls our custom HTTP TTS endpoint."""
 
@@ -456,12 +482,33 @@ async def webrtc_offer(request: Request):
         if not sdp:
             raise HTTPException(status_code=400, detail="Missing SDP")
 
+        # Log client ICE candidates from offer
+        client_candidates = parse_ice_candidates(sdp)
+        logger.info(f"[ICE:Client] Received {len(client_candidates)} candidates")
+        for c in client_candidates:
+            logger.info(f"[ICE:Client]   {c['type']} {c['protocol']} {c['address']}:{c['port']}")
+
         async def on_connection(connection: SmallWebRTCConnection):
             """Callback when WebRTC connection is established."""
             await run_bot(connection)
 
         request_obj = SmallWebRTCRequest(sdp=sdp, type=sdp_type)
         answer = await webrtc_handler.handle_web_request(request_obj, on_connection)
+
+        # Log server ICE candidates from answer
+        if answer and 'sdp' in answer:
+            server_candidates = parse_ice_candidates(answer['sdp'])
+            logger.info(f"[ICE:Server] Generated {len(server_candidates)} candidates")
+            for c in server_candidates:
+                logger.info(f"[ICE:Server]   {c['type']} {c['protocol']} {c['address']}:{c['port']}")
+
+            # Compare candidate types
+            client_types = set(c['type'] for c in client_candidates)
+            server_types = set(c['type'] for c in server_candidates)
+            logger.info(f"[ICE:Compare] Client types: {client_types}, Server types: {server_types}")
+
+            if 'relay' in client_types and 'relay' not in server_types:
+                logger.warning("[ICE:Compare] MISMATCH: Client has relay, Server does NOT!")
 
         return JSONResponse(answer)
 
@@ -611,6 +658,29 @@ CLIENT_HTML = """
             transcript.scrollTop = transcript.scrollHeight;
         }
 
+        // Parse ICE candidates from SDP for logging
+        function parseICECandidates(sdp) {
+            const candidates = [];
+            const lines = sdp.split('\\n');
+            for (const line of lines) {
+                if (line.includes('a=candidate:')) {
+                    const typeMatch = line.match(/typ (\\w+)/);
+                    const protocolMatch = line.match(/udp|tcp/i);
+                    const addrMatch = line.match(/\\d+\\.\\d+\\.\\d+\\.\\d+/);
+                    candidates.push({
+                        type: typeMatch ? typeMatch[1] : 'unknown',
+                        protocol: protocolMatch ? protocolMatch[0].toLowerCase() : 'unknown',
+                        address: addrMatch ? addrMatch[0] : 'unknown',
+                        raw: line.trim()
+                    });
+                }
+            }
+            return candidates;
+        }
+
+        // ICE checking timing
+        let iceCheckingStart = null;
+
         async function connect() {
             try {
                 setStatus('connecting', 'Connecting...');
@@ -649,20 +719,41 @@ CLIENT_HTML = """
                     pc.addTrack(track, localStream);
                 });
 
-                // ICE connection state monitoring
+                // ICE connection state monitoring with timing
                 pc.oniceconnectionstatechange = () => {
-                    console.log('ICE connection state:', pc.iceConnectionState);
-                    const stateMap = {
-                        'new': ['connecting', 'Initializing...'],
-                        'checking': ['connecting', 'Checking connectivity...'],
-                        'connected': ['connected', 'Connected!'],
-                        'completed': ['connected', 'Connected (completed)'],
-                        'disconnected': ['disconnected', 'Disconnected'],
-                        'failed': ['disconnected', 'Connection failed'],
-                        'closed': ['disconnected', 'Connection closed']
-                    };
-                    const [status, text] = stateMap[pc.iceConnectionState] || ['connecting', pc.iceConnectionState];
-                    setStatus(status, text);
+                    const state = pc.iceConnectionState;
+                    const now = new Date().toISOString();
+
+                    if (state === 'checking') {
+                        iceCheckingStart = Date.now();
+                        console.log(`[ICE:State] ${now} checking (connectivity tests starting)`);
+                        setStatus('connecting', 'Checking connectivity...');
+                    } else if (state === 'connected' || state === 'completed') {
+                        const duration = iceCheckingStart ? ((Date.now() - iceCheckingStart) / 1000).toFixed(1) : '?';
+                        console.log(`[ICE:State] ${now} ${state} (took ${duration}s)`);
+                        setStatus('connected', state === 'completed' ? 'Connected (completed)' : 'Connected!');
+                        // Log selected candidate pair
+                        pc.getStats().then(stats => {
+                            stats.forEach(report => {
+                                if (report.type === 'candidate-pair' && report.selected) {
+                                    console.log('[ICE:Selected] Pair:', report.localCandidateId, '<->', report.remoteCandidateId);
+                                    console.log('[ICE:Selected] Details:', report);
+                                }
+                            });
+                        });
+                    } else if (state === 'failed') {
+                        console.error(`[ICE:State] ${now} FAILED - no working candidate pair found`);
+                        setStatus('disconnected', 'Connection failed');
+                    } else if (state === 'disconnected') {
+                        console.log(`[ICE:State] ${now} disconnected`);
+                        setStatus('disconnected', 'Disconnected');
+                    } else if (state === 'closed') {
+                        console.log(`[ICE:State] ${now} closed`);
+                        setStatus('disconnected', 'Connection closed');
+                    } else {
+                        console.log(`[ICE:State] ${now} ${state}`);
+                        setStatus('connecting', state);
+                    }
                 };
 
                 // ICE candidate logging
@@ -728,6 +819,22 @@ CLIENT_HTML = """
                 }
 
                 const answer = await response.json();
+
+                // Log server ICE candidates from answer
+                const serverCandidates = parseICECandidates(answer.sdp);
+                console.log(`[ICE:Server] ${serverCandidates.length} candidates from server:`);
+                serverCandidates.forEach(c => {
+                    console.log(`[ICE:Server]   ${c.type} ${c.protocol} ${c.address}`);
+                });
+
+                // Check for relay mismatch
+                const clientHasRelay = relayCandidates > 0;
+                const serverHasRelay = serverCandidates.some(c => c.type === 'relay');
+                if (clientHasRelay && !serverHasRelay) {
+                    console.warn('[ICE:Compare] MISMATCH: Client has relay, Server does NOT!');
+                }
+                console.log(`[ICE:Compare] Client relay: ${clientHasRelay}, Server relay: ${serverHasRelay}`);
+
                 await pc.setRemoteDescription(new RTCSessionDescription(answer));
 
                 setStatus('connected', 'Connected - Speak now!');
