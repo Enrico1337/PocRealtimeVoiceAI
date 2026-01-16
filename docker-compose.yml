@@ -162,6 +162,9 @@ services:
       - VAD_SILENCE_MS=${VAD_SILENCE_MS:-800}
       - RAG_TOP_K=${RAG_TOP_K:-4}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # TURN server credentials (for external TURN like metered.ca)
+      - TURN_USERNAME=${TURN_USERNAME:-}
+      - TURN_CREDENTIAL=${TURN_CREDENTIAL:-}
     volumes:
       - ./kb:/app/kb:ro
       - hf-cache:/root/.cache/huggingface
