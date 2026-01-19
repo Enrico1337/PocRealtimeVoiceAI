@@ -4,7 +4,8 @@ Pipecat Voice Pipeline: STT -> LLM (+RAG) -> TTS with VAD and Barge-in.
 
 import asyncio
 import logging
-from typing import Optional
+import time
+from typing import Optional, TYPE_CHECKING
 
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.frames.frames import (
@@ -32,20 +33,38 @@ from .rag import RAGService
 from .settings import Settings
 from .telemetry import SessionMetrics, track_latency
 
+if TYPE_CHECKING:
+    from .events import SessionEventManager
+
 logger = logging.getLogger(__name__)
 
 
 class RAGProcessor(FrameProcessor):
     """Processor that augments user messages with RAG context."""
 
-    def __init__(self, rag_service: RAGService, settings: Settings):
+    def __init__(
+        self,
+        rag_service: RAGService,
+        settings: Settings,
+        event_manager: Optional["SessionEventManager"] = None,
+        session_id: Optional[str] = None,
+    ):
         super().__init__()
         self.rag_service = rag_service
         self.settings = settings
+        self.event_manager = event_manager
+        self.session_id = session_id
         self.session_metrics: Optional[SessionMetrics] = None
 
     def set_session_metrics(self, metrics: SessionMetrics) -> None:
         self.session_metrics = metrics
+
+    async def _emit_event(self, event_type: str, **kwargs):
+        """Emit event if event manager is configured."""
+        if self.event_manager and self.session_id:
+            method = getattr(self.event_manager, f"emit_{event_type}", None)
+            if method:
+                await method(self.session_id, **kwargs)
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
@@ -53,12 +72,17 @@ class RAGProcessor(FrameProcessor):
         if isinstance(frame, TranscriptionFrame) and frame.text:
             # Retrieve relevant context
             user_text = frame.text
-            logger.info(f"[{self.session_metrics.session_id if self.session_metrics else 'unknown'}] "
-                       f"User: {user_text}")
+            session_log_id = self.session_id or (self.session_metrics.session_id if self.session_metrics else 'unknown')
+            logger.info(f"[{session_log_id}] User: {user_text}")
+
+            # Emit STT complete event and transcript
+            await self._emit_event("stt", status="transcribed", text=user_text)
+            await self._emit_event("transcript", role="user", text=user_text)
 
             context_text = ""
             if self.rag_service._initialized:
                 try:
+                    await self._emit_event("rag", status="retrieving")
                     if self.session_metrics:
                         with track_latency("rag", self.session_metrics):
                             docs = await self.rag_service.retrieve(user_text)
@@ -68,9 +92,11 @@ class RAGProcessor(FrameProcessor):
                     context_text = self.rag_service.format_context(docs)
                     if context_text:
                         logger.debug(f"RAG context retrieved from {len(docs)} documents")
+                        await self._emit_event("rag", status="retrieved", docs_count=len(docs))
 
                 except Exception as e:
                     logger.error(f"RAG retrieval error: {e}")
+                    await self._emit_event("error", message=str(e), component="rag")
 
             # Augment the transcription with context
             if context_text:
@@ -83,6 +109,9 @@ class RAGProcessor(FrameProcessor):
                     user_id=frame.user_id,
                     timestamp=frame.timestamp
                 )
+
+            # Emit LLM processing event
+            await self._emit_event("llm", status="processing")
 
         await self.push_frame(frame, direction)
 
@@ -128,13 +157,26 @@ class InterruptionHandler(FrameProcessor):
 class ResponseLogger(FrameProcessor):
     """Log bot responses for debugging."""
 
-    def __init__(self):
+    def __init__(
+        self,
+        event_manager: Optional["SessionEventManager"] = None,
+        session_id: Optional[str] = None,
+    ):
         super().__init__()
+        self.event_manager = event_manager
+        self.session_id = session_id
         self.session_metrics: Optional[SessionMetrics] = None
         self._current_response = []
 
     def set_session_metrics(self, metrics: SessionMetrics) -> None:
         self.session_metrics = metrics
+
+    async def _emit_event(self, event_type: str, **kwargs):
+        """Emit event if event manager is configured."""
+        if self.event_manager and self.session_id:
+            method = getattr(self.event_manager, f"emit_{event_type}", None)
+            if method:
+                await method(self.session_id, **kwargs)
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
@@ -145,10 +187,14 @@ class ResponseLogger(FrameProcessor):
         elif isinstance(frame, LLMFullResponseEndFrame):
             if self._current_response:
                 full_response = "".join(self._current_response)
-                logger.info(
-                    f"[{self.session_metrics.session_id if self.session_metrics else 'unknown'}] "
-                    f"Bot: {full_response}"
-                )
+                session_log_id = self.session_id or (self.session_metrics.session_id if self.session_metrics else 'unknown')
+                logger.info(f"[{session_log_id}] Bot: {full_response}")
+
+                # Emit LLM complete and transcript events
+                await self._emit_event("llm", status="completed", text=full_response)
+                await self._emit_event("transcript", role="bot", text=full_response)
+                await self._emit_event("tts", status="speaking")
+
                 self._current_response = []
 
             if self.session_metrics:

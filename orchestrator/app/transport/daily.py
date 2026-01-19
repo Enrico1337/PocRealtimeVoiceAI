@@ -11,7 +11,7 @@ import aiohttp
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.transports.daily.transport import DailyParams, DailyTransport
-from pipecat.transports.services.helpers.daily_rest import DailyRESTHelper, DailyRoomParams
+from pipecat.transports.daily.utils import DailyRESTHelper, DailyRoomParams
 
 from .types import DailyRoomInfo
 

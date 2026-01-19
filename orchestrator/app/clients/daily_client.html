@@ -13,13 +13,14 @@
             min-height: 100vh;
             display: flex;
             justify-content: center;
-            align-items: center;
+            align-items: flex-start;
+            padding: 2rem;
             color: #fff;
         }
         .container {
             text-align: center;
-            padding: 2rem;
-            max-width: 500px;
+            width: 100%;
+            max-width: 800px;
         }
         h1 {
             font-size: 2rem;
@@ -28,7 +29,7 @@
         }
         .subtitle {
             color: #8892b0;
-            margin-bottom: 2rem;
+            margin-bottom: 1.5rem;
         }
         .mode-badge {
             display: inline-block;
@@ -43,7 +44,7 @@
             background: rgba(255,255,255,0.1);
             border-radius: 12px;
             padding: 1.5rem;
-            margin-bottom: 2rem;
+            margin-bottom: 1.5rem;
         }
         .status-indicator {
             display: inline-block;
@@ -79,23 +80,146 @@
             background: #4a4a6a;
             cursor: not-allowed;
         }
-        .info-box {
+        .button-secondary {
+            background: #4a4a6a;
+            padding: 0.5rem 1rem;
+            font-size: 0.9rem;
+        }
+        .button-secondary:hover:not(:disabled) {
+            background: #5a5a7a;
+        }
+        .panels {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+        @media (max-width: 600px) {
+            .panels {
+                grid-template-columns: 1fr;
+            }
+        }
+        .panel {
             background: rgba(0,0,0,0.3);
             border-radius: 12px;
             padding: 1rem;
-            margin-top: 2rem;
             text-align: left;
+        }
+        .panel h3 {
+            color: #64b5f6;
+            margin-bottom: 0.75rem;
+            font-size: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .panel h3 .icon { font-size: 1.2rem; }
+
+        /* Status Panel */
+        .status-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .status-row:last-child { border-bottom: none; }
+        .status-row .label { color: #8892b0; }
+        .status-row .value {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4a4a6a;
+        }
+        .status-dot.active { background: #6bcb77; }
+        .status-dot.processing { background: #ffd93d; animation: pulse 1s infinite; }
+        .status-dot.error { background: #ff6b6b; }
+
+        /* Transcript Panel */
+        .transcript-container {
+            max-height: 300px;
+            overflow-y: auto;
             font-size: 0.9rem;
         }
-        .info-box h3 {
-            color: #64b5f6;
-            margin-bottom: 0.5rem;
+        .transcript-entry {
+            padding: 0.5rem;
+            margin: 0.25rem 0;
+            border-radius: 8px;
+            animation: fadeIn 0.3s ease;
         }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .transcript-entry.user {
+            background: rgba(100, 181, 246, 0.2);
+            border-left: 3px solid #64b5f6;
+        }
+        .transcript-entry.bot {
+            background: rgba(107, 203, 119, 0.2);
+            border-left: 3px solid #6bcb77;
+        }
+        .transcript-entry .role {
+            font-weight: bold;
+            font-size: 0.8rem;
+            margin-bottom: 0.25rem;
+        }
+        .transcript-entry.user .role { color: #64b5f6; }
+        .transcript-entry.bot .role { color: #6bcb77; }
+        .transcript-empty {
+            color: #8892b0;
+            text-align: center;
+            padding: 2rem;
+            font-style: italic;
+        }
+
+        /* Audio Test Panel */
+        .audio-visualizer {
+            width: 100%;
+            height: 50px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 8px;
+            margin-bottom: 0.75rem;
+        }
+        .audio-controls {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+        .audio-level {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+            color: #8892b0;
+            font-size: 0.85rem;
+        }
+        .level-bar {
+            flex: 1;
+            height: 8px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .level-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #6bcb77 0%, #ffd93d 70%, #ff6b6b 100%);
+            width: 0%;
+            transition: width 0.1s ease;
+        }
+
+        /* Room Info */
         .room-url {
             word-break: break-all;
             color: #6bcb77;
             font-family: monospace;
             font-size: 0.85rem;
+            margin-top: 0.5rem;
         }
         .mic-active {
             animation: mic-pulse 1s infinite;
@@ -124,16 +248,82 @@
         <button id="connectBtn" onclick="connect()">Connect</button>
         <button id="disconnectBtn" onclick="disconnect()" disabled>Disconnect</button>
 
-        <div class="info-box" id="roomInfo" style="display: none;">
-            <h3>Room Info</h3>
-            <p>Room: <span class="room-url" id="roomUrl"></span></p>
-        </div>
-
         <p class="error-text" id="errorText" style="display: none;"></p>
+
+        <div class="panels">
+            <!-- Status Panel -->
+            <div class="panel">
+                <h3><span class="icon">&#9881;</span> Pipeline Status</h3>
+                <div class="status-row">
+                    <span class="label">WebRTC</span>
+                    <span class="value">
+                        <span class="status-dot" id="webrtcDot"></span>
+                        <span id="webrtcStatus">-</span>
+                    </span>
+                </div>
+                <div class="status-row">
+                    <span class="label">STT</span>
+                    <span class="value">
+                        <span class="status-dot" id="sttDot"></span>
+                        <span id="sttStatus">-</span>
+                    </span>
+                </div>
+                <div class="status-row">
+                    <span class="label">LLM</span>
+                    <span class="value">
+                        <span class="status-dot" id="llmDot"></span>
+                        <span id="llmStatus">-</span>
+                    </span>
+                </div>
+                <div class="status-row">
+                    <span class="label">TTS</span>
+                    <span class="value">
+                        <span class="status-dot" id="ttsDot"></span>
+                        <span id="ttsStatus">-</span>
+                    </span>
+                </div>
+                <div class="room-url" id="roomInfo" style="display: none;">
+                    Room: <span id="roomUrl"></span>
+                </div>
+            </div>
+
+            <!-- Transcript Panel -->
+            <div class="panel">
+                <h3><span class="icon">&#128172;</span> Conversation</h3>
+                <div class="transcript-container" id="transcriptContainer">
+                    <div class="transcript-empty">
+                        Connect and start speaking to see the conversation
+                    </div>
+                </div>
+            </div>
+
+            <!-- Audio Test Panel -->
+            <div class="panel" style="grid-column: span 2;">
+                <h3><span class="icon">&#127908;</span> Audio Test</h3>
+                <canvas class="audio-visualizer" id="audioVisualizer"></canvas>
+                <div class="audio-level">
+                    <span>Mic Level:</span>
+                    <div class="level-bar">
+                        <div class="level-fill" id="levelFill"></div>
+                    </div>
+                </div>
+                <div class="audio-controls" style="margin-top: 0.75rem;">
+                    <button class="button-secondary" onclick="testMic()">Test Microphone</button>
+                    <button class="button-secondary" onclick="testSpeaker()">Test Speaker</button>
+                    <button class="button-secondary" onclick="stopTest()">Stop Test</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
         let callObject = null;
+        let eventSource = null;
+        let sessionId = null;
+        let audioContext = null;
+        let analyser = null;
+        let testStream = null;
+        let animationId = null;
 
         const statusIndicator = document.getElementById('statusIndicator');
         const statusText = document.getElementById('statusText');
@@ -142,6 +332,18 @@
         const roomInfo = document.getElementById('roomInfo');
         const roomUrlSpan = document.getElementById('roomUrl');
         const errorText = document.getElementById('errorText');
+        const transcriptContainer = document.getElementById('transcriptContainer');
+
+        // Status elements
+        const webrtcDot = document.getElementById('webrtcDot');
+        const webrtcStatus = document.getElementById('webrtcStatus');
+        const sttDot = document.getElementById('sttDot');
+        const sttStatus = document.getElementById('sttStatus');
+        const llmDot = document.getElementById('llmDot');
+        const llmStatus = document.getElementById('llmStatus');
+        const ttsDot = document.getElementById('ttsDot');
+        const ttsStatus = document.getElementById('ttsStatus');
+        const levelFill = document.getElementById('levelFill');
 
         function setStatus(status, text) {
             statusIndicator.className = 'status-indicator ' + status;
@@ -157,11 +359,130 @@
             errorText.style.display = 'none';
         }
 
+        function updatePipelineStatus(component, status, statusClass = '') {
+            const dot = document.getElementById(component + 'Dot');
+            const statusEl = document.getElementById(component + 'Status');
+            if (dot && statusEl) {
+                dot.className = 'status-dot ' + statusClass;
+                statusEl.textContent = status;
+            }
+        }
+
+        function addTranscript(role, text) {
+            // Remove empty message if exists
+            const emptyMsg = transcriptContainer.querySelector('.transcript-empty');
+            if (emptyMsg) emptyMsg.remove();
+
+            const entry = document.createElement('div');
+            entry.className = 'transcript-entry ' + role;
+            entry.innerHTML = `
+                <div class="role">${role === 'user' ? 'You' : 'Assistant'}</div>
+                <div class="text">${escapeHtml(text)}</div>
+            `;
+            transcriptContainer.appendChild(entry);
+            transcriptContainer.scrollTop = transcriptContainer.scrollHeight;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function clearTranscript() {
+            transcriptContainer.innerHTML = '<div class="transcript-empty">Connect and start speaking to see the conversation</div>';
+        }
+
+        function connectEventStream() {
+            if (!sessionId) return;
+
+            eventSource = new EventSource(`/api/events/${sessionId}`);
+
+            eventSource.onopen = () => {
+                console.log('SSE connected');
+            };
+
+            eventSource.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    handleEvent(data);
+                } catch (e) {
+                    console.log('SSE message:', event.data);
+                }
+            };
+
+            eventSource.onerror = (e) => {
+                console.error('SSE error:', e);
+            };
+        }
+
+        function handleEvent(event) {
+            console.log('Event:', event);
+
+            switch (event.type) {
+                case 'connected':
+                    console.log('SSE session connected:', event.session_id);
+                    break;
+
+                case 'connection':
+                    if (event.data.status === 'connected') {
+                        updatePipelineStatus('webrtc', 'Connected', 'active');
+                    } else if (event.data.status === 'disconnected') {
+                        updatePipelineStatus('webrtc', 'Disconnected', '');
+                    }
+                    break;
+
+                case 'stt':
+                    if (event.data.status === 'transcribed') {
+                        updatePipelineStatus('stt', 'Transcribed', 'active');
+                        setTimeout(() => updatePipelineStatus('stt', 'Ready', 'active'), 1000);
+                    }
+                    break;
+
+                case 'llm':
+                    if (event.data.status === 'processing') {
+                        updatePipelineStatus('llm', 'Processing...', 'processing');
+                    } else if (event.data.status === 'completed') {
+                        updatePipelineStatus('llm', 'Completed', 'active');
+                        setTimeout(() => updatePipelineStatus('llm', 'Ready', 'active'), 1000);
+                    }
+                    break;
+
+                case 'tts':
+                    if (event.data.status === 'speaking') {
+                        updatePipelineStatus('tts', 'Speaking...', 'processing');
+                        setTimeout(() => updatePipelineStatus('tts', 'Ready', 'active'), 2000);
+                    }
+                    break;
+
+                case 'rag':
+                    if (event.data.status === 'retrieving') {
+                        console.log('RAG: Retrieving context...');
+                    } else if (event.data.status === 'retrieved') {
+                        console.log('RAG: Retrieved', event.data.docs_count, 'documents');
+                    }
+                    break;
+
+                case 'transcript':
+                    addTranscript(event.data.role, event.data.text);
+                    break;
+
+                case 'error':
+                    console.error('Pipeline error:', event.data);
+                    showError(event.data.message);
+                    break;
+            }
+        }
+
         async function connect() {
             try {
                 hideError();
+                clearTranscript();
                 setStatus('connecting', 'Creating session...');
                 connectBtn.disabled = true;
+
+                // Reset pipeline status
+                ['webrtc', 'stt', 'llm', 'tts'].forEach(c => updatePipelineStatus(c, '-', ''));
 
                 // Request session from server
                 const response = await fetch('/api/session', {
@@ -174,14 +495,19 @@
                     throw new Error(error.detail || 'Failed to create session');
                 }
 
-                const { room_url, token } = await response.json();
-                console.log('Session created:', room_url);
+                const { room_url, token, session_id: sid } = await response.json();
+                sessionId = sid;
+                console.log('Session created:', room_url, 'Session ID:', sessionId);
 
                 // Show room info
                 roomUrlSpan.textContent = room_url;
                 roomInfo.style.display = 'block';
 
+                // Connect to event stream
+                connectEventStream();
+
                 setStatus('connecting', 'Joining room...');
+                updatePipelineStatus('webrtc', 'Connecting...', 'processing');
 
                 // Create Daily call object
                 callObject = DailyIframe.createCallObject({
@@ -198,6 +524,10 @@
                 callObject.on('joined-meeting', () => {
                     console.log('Joined meeting');
                     setStatus('connected', 'Connected - Speak now!');
+                    updatePipelineStatus('webrtc', 'Connected', 'active');
+                    updatePipelineStatus('stt', 'Ready', 'active');
+                    updatePipelineStatus('llm', 'Ready', 'active');
+                    updatePipelineStatus('tts', 'Ready', 'active');
                     connectBtn.disabled = true;
                     disconnectBtn.disabled = false;
                     connectBtn.classList.add('mic-active');
@@ -252,6 +582,16 @@
             disconnectBtn.disabled = true;
             connectBtn.classList.remove('mic-active');
             roomInfo.style.display = 'none';
+
+            // Reset pipeline status
+            ['webrtc', 'stt', 'llm', 'tts'].forEach(c => updatePipelineStatus(c, '-', ''));
+
+            // Close event stream
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+            }
+            sessionId = null;
         }
 
         async function disconnect() {
@@ -267,8 +607,120 @@
             handleDisconnect();
         }
 
+        // Audio Test Functions
+        async function testMic() {
+            try {
+                stopTest();
+
+                testStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    }
+                });
+
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 256;
+
+                const source = audioContext.createMediaStreamSource(testStream);
+                source.connect(analyser);
+
+                drawVisualizer();
+            } catch (e) {
+                showError('Microphone access denied: ' + e.message);
+            }
+        }
+
+        function drawVisualizer() {
+            const canvas = document.getElementById('audioVisualizer');
+            const ctx = canvas.getContext('2d');
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+
+            function draw() {
+                animationId = requestAnimationFrame(draw);
+
+                analyser.getByteFrequencyData(dataArray);
+
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                const barWidth = (canvas.width / bufferLength) * 2.5;
+                let x = 0;
+
+                // Calculate average level for the level meter
+                let sum = 0;
+                for (let i = 0; i < bufferLength; i++) {
+                    const barHeight = (dataArray[i] / 255) * canvas.height;
+                    sum += dataArray[i];
+
+                    // Color gradient from green to red
+                    const hue = 120 - (dataArray[i] / 255) * 60;
+                    ctx.fillStyle = `hsl(${hue}, 70%, 50%)`;
+                    ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+
+                    x += barWidth + 1;
+                }
+
+                // Update level meter
+                const level = (sum / bufferLength / 255) * 100;
+                levelFill.style.width = level + '%';
+            }
+
+            draw();
+        }
+
+        function testSpeaker() {
+            stopTest();
+
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+
+            oscillator.frequency.setValueAtTime(440, audioContext.currentTime);
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+
+            oscillator.start();
+
+            // Stop after 1 second
+            setTimeout(() => {
+                oscillator.stop();
+            }, 1000);
+        }
+
+        function stopTest() {
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+            if (testStream) {
+                testStream.getTracks().forEach(track => track.stop());
+                testStream = null;
+            }
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            analyser = null;
+            levelFill.style.width = '0%';
+
+            // Clear canvas
+            const canvas = document.getElementById('audioVisualizer');
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+
         // Handle page unload
-        window.addEventListener('beforeunload', disconnect);
+        window.addEventListener('beforeunload', () => {
+            stopTest();
+            disconnect();
+        });
     </script>
 </body>
 </html>

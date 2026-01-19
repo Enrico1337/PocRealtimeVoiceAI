@@ -7,6 +7,7 @@ Supports two transport modes:
 """
 
 import asyncio
+import json
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -15,7 +16,7 @@ from typing import Optional
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
@@ -23,6 +24,7 @@ from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.processors.aggregators.llm_response_universal import LLMContextAggregatorPair
 from pipecat.services.openai.llm import OpenAILLMService
+from pipecat.services.openai.stt import OpenAISTTService
 from pipecat.transports.smallwebrtc.request_handler import (
     SmallWebRTCRequestHandler,
     SmallWebRTCRequest,
@@ -31,6 +33,7 @@ from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
 from pipecat.services.tts_service import TTSService
 from pipecat.frames.frames import TextFrame, Frame, EndFrame
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
+from pipecat.transcriptions.language import Language
 
 from .pipeline import RAGProcessor, InterruptionHandler, ResponseLogger
 from .rag import RAGService
@@ -38,6 +41,7 @@ from .settings import Settings, get_settings, TransportMode
 from .telemetry import SessionMetrics, setup_logging
 from .transport import TransportFactory, TransportConfig, DailyRoomInfo
 from .transport.local import get_local_ice_servers, get_local_ice_servers_for_client
+from .events import event_manager
 
 logger = logging.getLogger(__name__)
 
@@ -157,9 +161,17 @@ class SentenceAggregator(FrameProcessor):
             await self.push_frame(frame, direction)
 
 
-def create_pipeline_components():
-    """Create common pipeline components (LLM, TTS, RAG, etc.)."""
+def create_pipeline_components(session_id: Optional[str] = None):
+    """Create common pipeline components (STT, LLM, TTS, RAG, etc.)."""
     global rag_service, settings
+
+    # STT service (OpenAI-compatible via faster-whisper-server)
+    stt_service = OpenAISTTService(
+        api_key="not-needed",
+        base_url=f"{settings.stt_base_url}/v1",
+        model=settings.stt_model,
+        language=Language.DE,
+    )
 
     # LLM service (OpenAI-compatible via vLLM)
     llm_service = OpenAILLMService(
@@ -184,18 +196,19 @@ def create_pipeline_components():
 
     # Custom processors
     session_metrics = SessionMetrics()
-    rag_processor = RAGProcessor(rag_service, settings)
+    rag_processor = RAGProcessor(rag_service, settings, event_manager, session_id)
     rag_processor.set_session_metrics(session_metrics)
 
     interruption_handler = InterruptionHandler()
     interruption_handler.set_session_metrics(session_metrics)
 
-    response_logger = ResponseLogger()
+    response_logger = ResponseLogger(event_manager, session_id)
     response_logger.set_session_metrics(session_metrics)
 
     sentence_aggregator = SentenceAggregator(tts_service)
 
     return {
+        "stt_service": stt_service,
         "llm_service": llm_service,
         "tts_service": tts_service,
         "context_aggregator": context_aggregator,
@@ -219,10 +232,11 @@ async def run_local_bot(webrtc_connection: SmallWebRTCConnection) -> None:
         # Create transport using factory
         transport = transport_factory.create_local_transport(webrtc_connection)
 
-        # Build pipeline
+        # Build pipeline: Audio -> STT -> RAG -> LLM -> TTS -> Audio
         pipeline = Pipeline([
             transport.input(),
-            components["rag_processor"],
+            components["stt_service"],           # Transcribe audio to text
+            components["rag_processor"],         # Augment with RAG context
             components["context_aggregator"].user(),
             components["llm_service"],
             components["sentence_aggregator"],
@@ -250,22 +264,26 @@ async def run_local_bot(webrtc_connection: SmallWebRTCConnection) -> None:
         logger.info(f"Session {session_metrics.session_id} ended")
 
 
-async def run_daily_bot(room_info: DailyRoomInfo) -> None:
+async def run_daily_bot(room_info: DailyRoomInfo, session_id: str) -> None:
     """Run the voice bot pipeline for a Daily.co room."""
     global transport_factory
 
-    components = create_pipeline_components()
+    components = create_pipeline_components(session_id=session_id)
     session_metrics = components["session_metrics"]
-    logger.info(f"Starting Daily session {session_metrics.session_id} in room {room_info.room_name}")
+    logger.info(f"Starting Daily session {session_id} in room {room_info.room_name}")
+
+    # Emit connection event
+    await event_manager.emit_connection(session_id, "starting", {"room": room_info.room_name})
 
     try:
         # Create transport using factory
         transport = transport_factory.create_daily_transport(room_info)
 
-        # Build pipeline
+        # Build pipeline: Audio -> STT -> RAG -> LLM -> TTS -> Audio
         pipeline = Pipeline([
             transport.input(),
-            components["rag_processor"],
+            components["stt_service"],           # Transcribe audio to text
+            components["rag_processor"],         # Augment with RAG context
             components["context_aggregator"].user(),
             components["llm_service"],
             components["sentence_aggregator"],
@@ -282,15 +300,19 @@ async def run_daily_bot(room_info: DailyRoomInfo) -> None:
             )
         )
 
+        await event_manager.emit_connection(session_id, "connected")
+
         # Run the pipeline
         runner = PipelineRunner()
         await runner.run(task)
 
     except Exception as e:
-        logger.error(f"Session {session_metrics.session_id} error: {e}", exc_info=True)
+        logger.error(f"Session {session_id} error: {e}", exc_info=True)
+        await event_manager.emit_error(session_id, str(e), "pipeline")
     finally:
         session_metrics.log_summary()
-        logger.info(f"Session {session_metrics.session_id} ended")
+        await event_manager.emit_connection(session_id, "disconnected")
+        logger.info(f"Session {session_id} ended")
 
 
 @asynccontextmanager
@@ -390,15 +412,19 @@ async def create_session():
         # Create Daily room
         room_info = await transport_factory.create_daily_room()
 
-        # Start bot in background
-        asyncio.create_task(run_daily_bot(room_info))
+        # Use room_name as session_id for event streaming
+        session_id = room_info.room_name
 
-        logger.info(f"Created session: {room_info.room_name}")
+        # Start bot in background
+        asyncio.create_task(run_daily_bot(room_info, session_id))
+
+        logger.info(f"Created session: {session_id}")
 
         return {
             "room_url": room_info.room_url,
             "token": room_info.token,
             "room_name": room_info.room_name,
+            "session_id": session_id,
         }
 
     except Exception as e:
@@ -453,6 +479,52 @@ async def webrtc_offer(request: Request):
     except Exception as e:
         logger.error(f"WebRTC offer error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# Event Streaming (SSE)
+# =============================================================================
+
+@app.get("/api/events/{session_id}")
+async def stream_events(session_id: str):
+    """Stream real-time events for a session via Server-Sent Events.
+
+    Provides live updates on:
+    - Connection status
+    - STT transcriptions
+    - LLM responses
+    - TTS status
+    - VAD (voice activity detection)
+    - Errors
+    """
+    async def event_generator():
+        queue = await event_manager.subscribe(session_id)
+        try:
+            # Send initial connection event
+            yield f"data: {json.dumps({'type': 'connected', 'session_id': session_id})}\n\n"
+
+            while True:
+                try:
+                    # Wait for events with timeout for keepalive
+                    event_data = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    yield event_data
+                except asyncio.TimeoutError:
+                    # Send keepalive comment
+                    yield ": keepalive\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            await event_manager.unsubscribe(session_id, queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
 
 
 # =============================================================================

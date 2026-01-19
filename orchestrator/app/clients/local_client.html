@@ -12,13 +12,14 @@
             min-height: 100vh;
             display: flex;
             justify-content: center;
-            align-items: center;
+            align-items: flex-start;
+            padding: 2rem;
             color: #fff;
         }
         .container {
             text-align: center;
-            padding: 2rem;
-            max-width: 500px;
+            width: 100%;
+            max-width: 800px;
         }
         h1 {
             font-size: 2rem;
@@ -27,7 +28,7 @@
         }
         .subtitle {
             color: #8892b0;
-            margin-bottom: 2rem;
+            margin-bottom: 1.5rem;
         }
         .mode-badge {
             display: inline-block;
@@ -42,7 +43,7 @@
             background: rgba(255,255,255,0.1);
             border-radius: 12px;
             padding: 1.5rem;
-            margin-bottom: 2rem;
+            margin-bottom: 1.5rem;
         }
         .status-indicator {
             display: inline-block;
@@ -78,15 +79,115 @@
             background: #4a4a6a;
             cursor: not-allowed;
         }
-        .info-box {
+        .button-secondary {
+            background: #4a4a6a;
+            padding: 0.5rem 1rem;
+            font-size: 0.9rem;
+        }
+        .button-secondary:hover:not(:disabled) {
+            background: #5a5a7a;
+        }
+        .panels {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+        @media (max-width: 600px) {
+            .panels {
+                grid-template-columns: 1fr;
+            }
+        }
+        .panel {
             background: rgba(0,0,0,0.3);
             border-radius: 12px;
             padding: 1rem;
-            margin-top: 2rem;
             text-align: left;
-            font-size: 0.9rem;
-            color: #8892b0;
         }
+        .panel h3 {
+            color: #64b5f6;
+            margin-bottom: 0.75rem;
+            font-size: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .panel h3 .icon { font-size: 1.2rem; }
+
+        /* Status Panel */
+        .status-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .status-row:last-child { border-bottom: none; }
+        .status-row .label { color: #8892b0; }
+        .status-row .value {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4a4a6a;
+        }
+        .status-dot.active { background: #6bcb77; }
+        .status-dot.processing { background: #ffd93d; animation: pulse 1s infinite; }
+        .status-dot.error { background: #ff6b6b; }
+
+        /* Info Panel */
+        .info-text {
+            color: #8892b0;
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+        .info-text p { margin-bottom: 0.5rem; }
+        .ice-info {
+            font-family: monospace;
+            font-size: 0.8rem;
+            color: #6bcb77;
+            margin-top: 0.5rem;
+        }
+
+        /* Audio Test Panel */
+        .audio-visualizer {
+            width: 100%;
+            height: 50px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 8px;
+            margin-bottom: 0.75rem;
+        }
+        .audio-controls {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+        .audio-level {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+            color: #8892b0;
+            font-size: 0.85rem;
+        }
+        .level-bar {
+            flex: 1;
+            height: 8px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .level-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #6bcb77 0%, #ffd93d 70%, #ff6b6b 100%);
+            width: 0%;
+            transition: width 0.1s ease;
+        }
+
         .mic-active {
             animation: mic-pulse 1s infinite;
         }
@@ -114,23 +215,91 @@
         <button id="connectBtn" onclick="connect()">Connect</button>
         <button id="disconnectBtn" onclick="disconnect()" disabled>Disconnect</button>
 
-        <div class="info-box">
-            <p>Local mode uses direct WebRTC connections.</p>
-            <p>Best for: Same network (LAN) or localhost.</p>
-        </div>
-
         <p class="error-text" id="errorText" style="display: none;"></p>
+
+        <div class="panels">
+            <!-- Connection Status Panel -->
+            <div class="panel">
+                <h3><span class="icon">&#9881;</span> Connection Status</h3>
+                <div class="status-row">
+                    <span class="label">WebRTC</span>
+                    <span class="value">
+                        <span class="status-dot" id="webrtcDot"></span>
+                        <span id="webrtcStatus">-</span>
+                    </span>
+                </div>
+                <div class="status-row">
+                    <span class="label">ICE State</span>
+                    <span class="value">
+                        <span class="status-dot" id="iceDot"></span>
+                        <span id="iceStatus">-</span>
+                    </span>
+                </div>
+                <div class="status-row">
+                    <span class="label">Signaling</span>
+                    <span class="value">
+                        <span class="status-dot" id="signalingDot"></span>
+                        <span id="signalingStatus">-</span>
+                    </span>
+                </div>
+                <div class="ice-info" id="iceInfo" style="display: none;">
+                    ICE Servers: <span id="iceServersCount">0</span>
+                </div>
+            </div>
+
+            <!-- Info Panel -->
+            <div class="panel">
+                <h3><span class="icon">&#128712;</span> Information</h3>
+                <div class="info-text">
+                    <p>Local mode uses direct WebRTC connections via SmallWebRTC.</p>
+                    <p><strong>Best for:</strong> Same network (LAN) or localhost testing.</p>
+                    <p><strong>Note:</strong> Real-time logging requires Daily.co mode.</p>
+                </div>
+            </div>
+
+            <!-- Audio Test Panel -->
+            <div class="panel" style="grid-column: span 2;">
+                <h3><span class="icon">&#127908;</span> Audio Test</h3>
+                <canvas class="audio-visualizer" id="audioVisualizer"></canvas>
+                <div class="audio-level">
+                    <span>Mic Level:</span>
+                    <div class="level-bar">
+                        <div class="level-fill" id="levelFill"></div>
+                    </div>
+                </div>
+                <div class="audio-controls" style="margin-top: 0.75rem;">
+                    <button class="button-secondary" onclick="testMic()">Test Microphone</button>
+                    <button class="button-secondary" onclick="testSpeaker()">Test Speaker</button>
+                    <button class="button-secondary" onclick="stopTest()">Stop Test</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
         let pc = null;
         let localStream = null;
+        let audioContext = null;
+        let analyser = null;
+        let testStream = null;
+        let animationId = null;
 
         const statusIndicator = document.getElementById('statusIndicator');
         const statusText = document.getElementById('statusText');
         const connectBtn = document.getElementById('connectBtn');
         const disconnectBtn = document.getElementById('disconnectBtn');
         const errorText = document.getElementById('errorText');
+        const levelFill = document.getElementById('levelFill');
+
+        // Status elements
+        const webrtcDot = document.getElementById('webrtcDot');
+        const webrtcStatus = document.getElementById('webrtcStatus');
+        const iceDot = document.getElementById('iceDot');
+        const iceStatus = document.getElementById('iceStatus');
+        const signalingDot = document.getElementById('signalingDot');
+        const signalingStatus = document.getElementById('signalingStatus');
+        const iceInfo = document.getElementById('iceInfo');
+        const iceServersCount = document.getElementById('iceServersCount');
 
         function setStatus(status, text) {
             statusIndicator.className = 'status-indicator ' + status;
@@ -146,11 +315,25 @@
             errorText.style.display = 'none';
         }
 
+        function updateStatus(component, status, statusClass = '') {
+            const dot = document.getElementById(component + 'Dot');
+            const statusEl = document.getElementById(component + 'Status');
+            if (dot && statusEl) {
+                dot.className = 'status-dot ' + statusClass;
+                statusEl.textContent = status;
+            }
+        }
+
         async function connect() {
             try {
                 hideError();
                 setStatus('connecting', 'Connecting...');
                 connectBtn.disabled = true;
+
+                // Reset status
+                updateStatus('webrtc', 'Initializing...', 'processing');
+                updateStatus('ice', '-', '');
+                updateStatus('signaling', '-', '');
 
                 // Fetch ICE servers from server
                 const iceResponse = await fetch('/api/ice-servers');
@@ -160,7 +343,12 @@
                 const iceConfig = await iceResponse.json();
                 console.log('ICE servers:', iceConfig.iceServers);
 
+                // Show ICE info
+                iceInfo.style.display = 'block';
+                iceServersCount.textContent = iceConfig.iceServers.length;
+
                 // Get microphone access
+                updateStatus('signaling', 'Getting mic...', 'processing');
                 localStream = await navigator.mediaDevices.getUserMedia({
                     audio: {
                         echoCancellation: true,
@@ -186,15 +374,59 @@
                     const state = pc.iceConnectionState;
                     console.log('ICE connection state:', state);
 
-                    if (state === 'checking') {
-                        setStatus('connecting', 'Checking connectivity...');
-                    } else if (state === 'connected' || state === 'completed') {
-                        setStatus('connected', 'Connected - Speak now!');
-                    } else if (state === 'failed') {
-                        showError('Connection failed - ensure you are on the same network');
-                        setStatus('disconnected', 'Connection failed');
-                    } else if (state === 'disconnected' || state === 'closed') {
-                        setStatus('disconnected', 'Disconnected');
+                    switch (state) {
+                        case 'new':
+                            updateStatus('ice', 'New', '');
+                            break;
+                        case 'checking':
+                            setStatus('connecting', 'Checking connectivity...');
+                            updateStatus('ice', 'Checking...', 'processing');
+                            break;
+                        case 'connected':
+                            setStatus('connected', 'Connected - Speak now!');
+                            updateStatus('ice', 'Connected', 'active');
+                            updateStatus('webrtc', 'Active', 'active');
+                            connectBtn.classList.add('mic-active');
+                            break;
+                        case 'completed':
+                            updateStatus('ice', 'Completed', 'active');
+                            break;
+                        case 'failed':
+                            showError('Connection failed - ensure you are on the same network');
+                            setStatus('disconnected', 'Connection failed');
+                            updateStatus('ice', 'Failed', 'error');
+                            break;
+                        case 'disconnected':
+                            updateStatus('ice', 'Disconnected', '');
+                            setStatus('disconnected', 'Disconnected');
+                            break;
+                        case 'closed':
+                            updateStatus('ice', 'Closed', '');
+                            break;
+                    }
+                };
+
+                // ICE gathering state
+                pc.onicegatheringstatechange = () => {
+                    console.log('ICE gathering state:', pc.iceGatheringState);
+                };
+
+                // Signaling state
+                pc.onsignalingstatechange = () => {
+                    console.log('Signaling state:', pc.signalingState);
+                    switch (pc.signalingState) {
+                        case 'stable':
+                            updateStatus('signaling', 'Stable', 'active');
+                            break;
+                        case 'have-local-offer':
+                            updateStatus('signaling', 'Local offer', 'processing');
+                            break;
+                        case 'have-remote-offer':
+                            updateStatus('signaling', 'Remote offer', 'processing');
+                            break;
+                        case 'closed':
+                            updateStatus('signaling', 'Closed', '');
+                            break;
                     }
                 };
 
@@ -207,10 +439,12 @@
                 };
 
                 // Create and send offer
+                updateStatus('signaling', 'Creating offer...', 'processing');
                 const offer = await pc.createOffer();
                 await pc.setLocalDescription(offer);
 
                 // Wait for ICE gathering
+                updateStatus('ice', 'Gathering...', 'processing');
                 await new Promise((resolve) => {
                     if (pc.iceGatheringState === 'complete') {
                         resolve();
@@ -224,6 +458,7 @@
                 });
 
                 // Send offer to server
+                updateStatus('signaling', 'Sending offer...', 'processing');
                 const response = await fetch('/api/offer', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -239,15 +474,16 @@
 
                 const answer = await response.json();
                 await pc.setRemoteDescription(new RTCSessionDescription(answer));
+                updateStatus('signaling', 'Answer received', 'active');
 
                 disconnectBtn.disabled = false;
-                connectBtn.classList.add('mic-active');
 
             } catch (error) {
                 console.error('Connection error:', error);
                 showError(error.message);
                 setStatus('disconnected', 'Error: ' + error.message);
                 connectBtn.disabled = false;
+                updateStatus('webrtc', 'Error', 'error');
                 disconnect();
             }
         }
@@ -266,10 +502,128 @@
             connectBtn.disabled = false;
             disconnectBtn.disabled = true;
             connectBtn.classList.remove('mic-active');
+
+            // Reset status
+            updateStatus('webrtc', '-', '');
+            updateStatus('ice', '-', '');
+            updateStatus('signaling', '-', '');
+            iceInfo.style.display = 'none';
+        }
+
+        // Audio Test Functions
+        async function testMic() {
+            try {
+                stopTest();
+
+                testStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    }
+                });
+
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 256;
+
+                const source = audioContext.createMediaStreamSource(testStream);
+                source.connect(analyser);
+
+                drawVisualizer();
+            } catch (e) {
+                showError('Microphone access denied: ' + e.message);
+            }
+        }
+
+        function drawVisualizer() {
+            const canvas = document.getElementById('audioVisualizer');
+            const ctx = canvas.getContext('2d');
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+
+            function draw() {
+                animationId = requestAnimationFrame(draw);
+
+                analyser.getByteFrequencyData(dataArray);
+
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                const barWidth = (canvas.width / bufferLength) * 2.5;
+                let x = 0;
+
+                // Calculate average level for the level meter
+                let sum = 0;
+                for (let i = 0; i < bufferLength; i++) {
+                    const barHeight = (dataArray[i] / 255) * canvas.height;
+                    sum += dataArray[i];
+
+                    // Color gradient from green to red
+                    const hue = 120 - (dataArray[i] / 255) * 60;
+                    ctx.fillStyle = `hsl(${hue}, 70%, 50%)`;
+                    ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+
+                    x += barWidth + 1;
+                }
+
+                // Update level meter
+                const level = (sum / bufferLength / 255) * 100;
+                levelFill.style.width = level + '%';
+            }
+
+            draw();
+        }
+
+        function testSpeaker() {
+            stopTest();
+
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+
+            oscillator.frequency.setValueAtTime(440, audioContext.currentTime);
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+
+            oscillator.start();
+
+            // Stop after 1 second
+            setTimeout(() => {
+                oscillator.stop();
+            }, 1000);
+        }
+
+        function stopTest() {
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+            if (testStream) {
+                testStream.getTracks().forEach(track => track.stop());
+                testStream = null;
+            }
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            analyser = null;
+            levelFill.style.width = '0%';
+
+            // Clear canvas
+            const canvas = document.getElementById('audioVisualizer');
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
         }
 
         // Handle page unload
-        window.addEventListener('beforeunload', disconnect);
+        window.addEventListener('beforeunload', () => {
+            stopTest();
+            disconnect();
+        });
     </script>
 </body>
 </html>
