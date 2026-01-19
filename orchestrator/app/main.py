@@ -31,7 +31,7 @@ from pipecat.transports.smallwebrtc.request_handler import (
 )
 from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
 from pipecat.services.tts_service import TTSService
-from pipecat.frames.frames import TextFrame, Frame, EndFrame
+from pipecat.frames.frames import TextFrame, Frame, EndFrame, TTSAudioRawFrame
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.transcriptions.language import Language
 
@@ -132,11 +132,9 @@ class SentenceAggregator(FrameProcessor):
             text: Text to synthesize
             direction: Frame direction for pushing frames
         """
-        from pipecat.frames.frames import AudioRawFrame
-
         try:
             async for audio_chunk in self.tts_service.run_tts(text):
-                audio_frame = AudioRawFrame(
+                audio_frame = TTSAudioRawFrame(
                     audio=audio_chunk,
                     sample_rate=self.tts_service.sample_rate,
                     num_channels=1
