@@ -88,6 +88,19 @@
         .button-secondary:hover:not(:disabled) {
             background: #5a5a7a;
         }
+        .button-mute {
+            background: #4a4a6a;
+            min-width: 120px;
+        }
+        .button-mute.muted {
+            background: #ff6b6b;
+        }
+        .button-mute:hover:not(:disabled) {
+            background: #5a5a7a;
+        }
+        .button-mute.muted:hover:not(:disabled) {
+            background: #ff8585;
+        }
         .panels {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -263,6 +276,7 @@
         </div>
 
         <button id="connectBtn" onclick="connect()">Connect</button>
+        <button id="muteBtn" class="button-mute" onclick="toggleMute()" disabled>Mute</button>
         <button id="disconnectBtn" onclick="disconnect()" disabled>Disconnect</button>
 
         <p class="error-text" id="errorText" style="display: none;"></p>
@@ -376,6 +390,7 @@
         let analyser = null;
         let testStream = null;
         let animationId = null;
+        let isMuted = false;
 
         const statusIndicator = document.getElementById('statusIndicator');
         const statusText = document.getElementById('statusText');
@@ -581,6 +596,7 @@
                     updatePipelineStatus('llm', 'Ready', 'active');
                     updatePipelineStatus('tts', 'Ready', 'active');
                     connectBtn.disabled = true;
+                    document.getElementById('muteBtn').disabled = false;
                     disconnectBtn.disabled = false;
                     connectBtn.classList.add('mic-active');
                 });
@@ -635,6 +651,12 @@
             connectBtn.classList.remove('mic-active');
             roomInfo.style.display = 'none';
 
+            // Reset mute button
+            document.getElementById('muteBtn').disabled = true;
+            document.getElementById('muteBtn').textContent = 'Mute';
+            document.getElementById('muteBtn').classList.remove('muted');
+            isMuted = false;
+
             // Reset pipeline status
             ['webrtc', 'stt', 'llm', 'tts'].forEach(c => updatePipelineStatus(c, '-', ''));
 
@@ -657,6 +679,22 @@
                 callObject = null;
             }
             handleDisconnect();
+        }
+
+        function toggleMute() {
+            if (!callObject) return;
+
+            isMuted = !isMuted;
+            callObject.setLocalAudio(!isMuted);
+
+            const muteBtn = document.getElementById('muteBtn');
+            if (isMuted) {
+                muteBtn.textContent = 'Unmute';
+                muteBtn.classList.add('muted');
+            } else {
+                muteBtn.textContent = 'Mute';
+                muteBtn.classList.remove('muted');
+            }
         }
 
         // Audio Test Functions

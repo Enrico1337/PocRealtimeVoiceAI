@@ -203,33 +203,6 @@ class ResponseLogger(FrameProcessor):
         await self.push_frame(frame, direction)
 
 
-class OpenAICompatibleSTTService:
-    """STT service using OpenAI-compatible API (faster-whisper-server)."""
-
-    def __init__(self, base_url: str, model: str, language: str):
-        self.base_url = base_url.rstrip("/")
-        self.model = model
-        self.language = language
-
-    async def transcribe(self, audio_data: bytes) -> str:
-        """Transcribe audio data to text."""
-        import httpx
-
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                f"{self.base_url}/v1/audio/transcriptions",
-                files={"file": ("audio.wav", audio_data, "audio/wav")},
-                data={
-                    "model": self.model,
-                    "language": self.language,
-                    "response_format": "json"
-                }
-            )
-            response.raise_for_status()
-            result = response.json()
-            return result.get("text", "")
-
-
 class OpenAICompatibleTTSService:
     """TTS service using OpenAI-compatible API."""
 
