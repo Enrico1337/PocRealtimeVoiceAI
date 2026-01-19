@@ -216,7 +216,9 @@ def _get_stt_language() -> Language:
     lang_code = settings.stt_language.lower()
 
     if lang_code in language_map:
-        return language_map[lang_code]
+        result = language_map[lang_code]
+        logger.debug(f"STT language resolved: '{lang_code}' -> {result} (type: {type(result).__name__}, value: {result.value})")
+        return result
 
     logger.warning(f"Unknown language '{lang_code}', defaulting to German")
     return Language.DE
@@ -229,6 +231,7 @@ def create_pipeline_components(session_id: Optional[str] = None):
     # STT service (OpenAI-compatible via faster-whisper-server)
     stt_language = _get_stt_language()
     logger.info(f"STT configured: language={stt_language}, model={settings.stt_model}, url={settings.stt_base_url}")
+    logger.debug(f"STT language details: type={type(stt_language)}, repr={repr(stt_language)}, value={stt_language.value if hasattr(stt_language, 'value') else 'N/A'}")
 
     stt_service = OpenAISTTService(
         api_key="not-needed",
@@ -236,6 +239,7 @@ def create_pipeline_components(session_id: Optional[str] = None):
         model=settings.stt_model,
         language=stt_language,
     )
+    logger.debug(f"OpenAISTTService created with language parameter: {stt_language}")
 
     # LLM service (OpenAI-compatible via vLLM)
     llm_service = OpenAILLMService(
