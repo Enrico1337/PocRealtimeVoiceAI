@@ -24,17 +24,16 @@ from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.processors.aggregators.llm_response_universal import LLMContextAggregatorPair
 from pipecat.services.openai.llm import OpenAILLMService
-from pipecat.services.openai.stt import OpenAISTTService
+from pipecat.services.ai_services import STTService
+from typing import AsyncGenerator
 from pipecat.transports.smallwebrtc.request_handler import (
     SmallWebRTCRequestHandler,
     SmallWebRTCRequest,
 )
 from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
 from pipecat.services.tts_service import TTSService
-from pipecat.frames.frames import TextFrame, Frame, EndFrame, TTSAudioRawFrame
+from pipecat.frames.frames import TextFrame, Frame, EndFrame, TTSAudioRawFrame, TranscriptionFrame, ErrorFrame
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
-from pipecat.transcriptions.language import Language
-
 from .pipeline import RAGProcessor, InterruptionHandler, ResponseLogger
 from .rag import RAGService
 from .settings import Settings, get_settings, TransportMode
@@ -53,6 +52,73 @@ webrtc_handler: Optional[SmallWebRTCRequestHandler] = None
 
 # Path to client HTML files
 CLIENTS_DIR = Path(__file__).parent / "clients"
+
+
+class FasterWhisperSTTService(STTService):
+    """Custom STT Service for faster-whisper-server with explicit language parameter.
+
+    Unlike OpenAISTTService, this sends the language parameter directly as a string
+    in the multipart form data, ensuring compatibility with faster-whisper-server.
+    """
+
+    def __init__(self, base_url: str, model: str, language: str = "de"):
+        super().__init__()
+        self._base_url = base_url.rstrip("/")
+        self._model = model
+        self._language = language
+        self._client = None
+        logger.info(f"FasterWhisperSTTService initialized: model={model}, language={language}, url={base_url}")
+
+    async def _get_client(self):
+        """Lazy initialization of HTTP client."""
+        if self._client is None:
+            import aiohttp
+            self._client = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=30.0)
+            )
+        return self._client
+
+    async def run_stt(self, audio: bytes) -> AsyncGenerator[Frame, None]:
+        """Transcribe audio using faster-whisper-server API."""
+        try:
+            client = await self._get_client()
+
+            import aiohttp
+            form = aiohttp.FormData()
+            form.add_field('file', audio, filename='audio.wav', content_type='audio/wav')
+            form.add_field('model', self._model)
+            form.add_field('language', self._language)  # Explicit string!
+            form.add_field('response_format', 'json')
+
+            logger.debug(f"Sending STT request: model={self._model}, language={self._language}, audio_size={len(audio)}")
+
+            async with client.post(
+                f"{self._base_url}/v1/audio/transcriptions",
+                data=form
+            ) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    logger.error(f"STT API error: {response.status} - {error_text}")
+                    yield ErrorFrame(error=f"STT API error: {response.status}")
+                    return
+
+                result = await response.json()
+                text = result.get("text", "").strip()
+
+                logger.debug(f"STT response: '{text}'")
+
+                if text:
+                    yield TranscriptionFrame(text=text, user_id="", timestamp="")
+
+        except Exception as e:
+            logger.error(f"STT error: {e}")
+            yield ErrorFrame(error=f"STT error: {e}")
+
+    async def cleanup(self):
+        """Cleanup HTTP client."""
+        if self._client:
+            await self._client.close()
+            self._client = None
 
 
 class HTTPTTSService(TTSService):
@@ -193,53 +259,19 @@ class SentenceAggregator(FrameProcessor):
             await self.tts_service.cleanup()
 
 
-def _get_stt_language() -> Language:
-    """Get STT language as Pipecat Language enum.
-
-    Pipecat's OpenAISTTService expects a Language enum object,
-    which it handles internally for API serialization.
-    """
-    language_map = {
-        "de": Language.DE,
-        "en": Language.EN,
-        "es": Language.ES,
-        "fr": Language.FR,
-        "it": Language.IT,
-        "pt": Language.PT,
-        "nl": Language.NL,
-        "pl": Language.PL,
-        "ru": Language.RU,
-        "zh": Language.ZH,
-        "ja": Language.JA,
-        "ko": Language.KO,
-    }
-    lang_code = settings.stt_language.lower()
-
-    if lang_code in language_map:
-        result = language_map[lang_code]
-        logger.debug(f"STT language resolved: '{lang_code}' -> {result} (type: {type(result).__name__}, value: {result.value})")
-        return result
-
-    logger.warning(f"Unknown language '{lang_code}', defaulting to German")
-    return Language.DE
-
-
 def create_pipeline_components(session_id: Optional[str] = None):
     """Create common pipeline components (STT, LLM, TTS, RAG, etc.)."""
     global rag_service, settings
 
-    # STT service (OpenAI-compatible via faster-whisper-server)
-    stt_language = _get_stt_language()
+    # STT service (Custom für faster-whisper-server mit expliziter Sprache)
+    stt_language = settings.stt_language.lower()
     logger.info(f"STT configured: language={stt_language}, model={settings.stt_model}, url={settings.stt_base_url}")
-    logger.debug(f"STT language details: type={type(stt_language)}, repr={repr(stt_language)}, value={stt_language.value if hasattr(stt_language, 'value') else 'N/A'}")
 
-    stt_service = OpenAISTTService(
-        api_key="not-needed",
-        base_url=f"{settings.stt_base_url}/v1",
+    stt_service = FasterWhisperSTTService(
+        base_url=settings.stt_base_url,
         model=settings.stt_model,
         language=stt_language,
     )
-    logger.debug(f"OpenAISTTService created with language parameter: {stt_language}")
 
     # LLM service (OpenAI-compatible via vLLM)
     llm_service = OpenAILLMService(
