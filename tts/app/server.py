@@ -45,7 +45,7 @@ async def lifespan(app: FastAPI):
     engine = get_engine()
     engine.initialize()
 
-    logger.info(f"TTS service ready (device: {engine.device}, sample_rate: {engine.sample_rate})")
+    logger.info(f"TTS service ready (device: {engine.device}, sample_rate: {engine.sample_rate}, language: {engine.language}, multilingual: {engine._is_multilingual})")
 
     yield
 
@@ -68,7 +68,9 @@ async def health_check():
         "status": "healthy" if engine.is_initialized else "initializing",
         "service": "tts",
         "device": engine.device,
-        "sample_rate": engine.sample_rate
+        "sample_rate": engine.sample_rate,
+        "language": engine.language,
+        "multilingual": getattr(engine, '_is_multilingual', False)
     }
 
 

@@ -97,6 +97,7 @@ services:
     environment:
       - TTS_DEVICE=${TTS_DEVICE:-cuda}
       - TTS_SAMPLE_RATE=${TTS_SAMPLE_RATE:-24000}
+      - TTS_LANGUAGE=${TTS_LANGUAGE:-de}
     volumes:
       - hf-cache:/root/.cache/huggingface
     healthcheck:

@@ -222,7 +222,7 @@ def create_pipeline_components(session_id: Optional[str] = None):
 
     # STT service (OpenAI-compatible via faster-whisper-server)
     stt_language = _get_stt_language()
-    logger.info(f"Configuring STT service with language: {stt_language}")
+    logger.info(f"STT configured: language={stt_language}, model={settings.stt_model}, url={settings.stt_base_url}")
 
     stt_service = OpenAISTTService(
         api_key="not-needed",
@@ -297,8 +297,8 @@ async def run_local_bot(webrtc_connection: SmallWebRTCConnection) -> None:
             components["rag_processor"],         # Augment with RAG context
             components["context_aggregator"].user(),
             components["llm_service"],
-            components["sentence_aggregator"],
-            components["response_logger"],
+            components["response_logger"],       # Log responses BEFORE TTS conversion
+            components["sentence_aggregator"],   # Convert text to TTS audio
             transport.output(),
             components["context_aggregator"].assistant(),
         ])
@@ -346,8 +346,8 @@ async def run_daily_bot(room_info: DailyRoomInfo, session_id: str) -> None:
             components["rag_processor"],         # Augment with RAG context
             components["context_aggregator"].user(),
             components["llm_service"],
-            components["sentence_aggregator"],
-            components["response_logger"],
+            components["response_logger"],       # Log responses BEFORE TTS conversion
+            components["sentence_aggregator"],   # Convert text to TTS audio
             transport.output(),
             components["context_aggregator"].assistant(),
         ])

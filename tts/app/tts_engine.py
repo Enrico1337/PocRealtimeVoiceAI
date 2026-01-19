@@ -21,37 +21,41 @@ class ChatterboxEngine:
     def __init__(
         self,
         device: str = "cuda",
-        sample_rate: int = 24000
+        sample_rate: int = 24000,
+        language: str = "de"
     ):
         self.device = device if torch.cuda.is_available() else "cpu"
         self.sample_rate = sample_rate
+        self.language = language
         self.model = None
         self._initialized = False
+        self._is_multilingual = False
 
         if self.device == "cpu" and device == "cuda":
             logger.warning("CUDA not available, falling back to CPU")
 
     def initialize(self) -> None:
-        """Load the Chatterbox model."""
+        """Load the Chatterbox model (Multilingual for non-English)."""
         if self._initialized:
             return
 
-        logger.info(f"Loading Chatterbox model on {self.device}...")
+        logger.info(f"Loading Chatterbox model on {self.device} for language: {self.language}")
 
         try:
-            from chatterbox.tts import ChatterboxTTS
+            if self.language == "en":
+                from chatterbox.tts import ChatterboxTTS
+                self.model = ChatterboxTTS.from_pretrained(device=self.device)
+                self._is_multilingual = False
+            else:
+                from chatterbox.mtl_tts import ChatterboxMultilingualTTS
+                self.model = ChatterboxMultilingualTTS.from_pretrained(device=self.device)
+                self._is_multilingual = True
 
-            self.model = ChatterboxTTS.from_pretrained(
-                device=self.device
-            )
             self._initialized = True
-            logger.info("Chatterbox model loaded successfully")
+            logger.info(f"Chatterbox {'Multilingual ' if self._is_multilingual else ''}model loaded successfully")
 
-        except ImportError:
-            logger.error(
-                "Chatterbox not installed. Install with: "
-                "pip install chatterbox-tts"
-            )
+        except ImportError as e:
+            logger.error(f"Chatterbox import error: {e}")
             raise
         except Exception as e:
             logger.error(f"Failed to load Chatterbox: {e}")
@@ -82,11 +86,14 @@ class ChatterboxEngine:
 
         try:
             # Generate audio
-            wav = self.model.generate(
-                text,
-                exaggeration=exaggeration,
-                cfg_weight=cfg_weight
-            )
+            generate_kwargs = {
+                "exaggeration": exaggeration,
+                "cfg_weight": cfg_weight,
+            }
+            if self._is_multilingual:
+                generate_kwargs["language_id"] = self.language
+
+            wav = self.model.generate(text, **generate_kwargs)
 
             # Convert to numpy array
             if isinstance(wav, torch.Tensor):
@@ -129,11 +136,14 @@ class ChatterboxEngine:
             return b""
 
         try:
-            wav = self.model.generate(
-                text,
-                exaggeration=exaggeration,
-                cfg_weight=cfg_weight
-            )
+            generate_kwargs = {
+                "exaggeration": exaggeration,
+                "cfg_weight": cfg_weight,
+            }
+            if self._is_multilingual:
+                generate_kwargs["language_id"] = self.language
+
+            wav = self.model.generate(text, **generate_kwargs)
 
             if isinstance(wav, torch.Tensor):
                 wav = wav.cpu().numpy()
@@ -189,5 +199,6 @@ def get_engine() -> ChatterboxEngine:
     if _engine is None:
         device = os.environ.get("TTS_DEVICE", "cuda")
         sample_rate = int(os.environ.get("TTS_SAMPLE_RATE", "24000"))
-        _engine = ChatterboxEngine(device=device, sample_rate=sample_rate)
+        language = os.environ.get("TTS_LANGUAGE", "de")
+        _engine = ChatterboxEngine(device=device, sample_rate=sample_rate, language=language)
     return _engine
