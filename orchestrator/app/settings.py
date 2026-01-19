@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     # Model Configuration
     # =========================================================================
     stt_model: str = Field(
-        default="Systran/faster-distil-whisper-large-v3",
+        default="Systran/faster-whisper-large-v3",
         description="Whisper model for STT"
     )
     stt_language: str = Field(default="de", description="Default language for STT")

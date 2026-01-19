@@ -39,7 +39,7 @@ services:
     networks:
       - voice-net
     environment:
-      - WHISPER__MODEL=${STT_MODEL:-Systran/faster-distil-whisper-large-v3}
+      - WHISPER__MODEL=${STT_MODEL:-Systran/faster-whisper-large-v3}
       - WHISPER__DEVICE=${STT_DEVICE:-cuda}
       - WHISPER__COMPUTE_TYPE=${STT_COMPUTE_TYPE:-float16}
     volumes:
@@ -127,7 +127,7 @@ services:
       - QDRANT_HOST=localhost
       - QDRANT_PORT=6333
       # Model configs
-      - STT_MODEL=${STT_MODEL:-Systran/faster-distil-whisper-large-v3}
+      - STT_MODEL=${STT_MODEL:-Systran/faster-whisper-large-v3}
       - STT_LANGUAGE=${STT_LANGUAGE:-de}
       - LLM_MODEL=${LLM_MODEL:-stelterlab/Qwen3-30B-A3B-Instruct-2507-AWQ}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-BAAI/bge-m3}
