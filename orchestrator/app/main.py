@@ -193,8 +193,13 @@ class SentenceAggregator(FrameProcessor):
             await self.tts_service.cleanup()
 
 
-def _get_stt_language():
-    """Map language string to Pipecat Language enum."""
+def _get_stt_language() -> str:
+    """Get STT language code as string for API compatibility.
+
+    Note: We return the string value instead of Language enum because
+    the faster-whisper-server API expects language codes as strings.
+    Pipecat's StrEnum may not serialize correctly with all OpenAI clients.
+    """
     language_map = {
         "de": Language.DE,
         "en": Language.EN,
@@ -210,10 +215,13 @@ def _get_stt_language():
         "ko": Language.KO,
     }
     lang_code = settings.stt_language.lower()
+
     if lang_code in language_map:
-        return language_map[lang_code]
+        # Return the string value of the enum for API compatibility
+        return language_map[lang_code].value
+
     logger.warning(f"Unknown language '{lang_code}', defaulting to German")
-    return Language.DE
+    return Language.DE.value
 
 
 def create_pipeline_components(session_id: Optional[str] = None):
@@ -221,14 +229,14 @@ def create_pipeline_components(session_id: Optional[str] = None):
     global rag_service, settings
 
     # STT service (OpenAI-compatible via faster-whisper-server)
-    stt_language = _get_stt_language()
+    stt_language = _get_stt_language()  # Returns string "de", not Language.DE enum
     logger.info(f"STT configured: language={stt_language}, model={settings.stt_model}, url={settings.stt_base_url}")
 
     stt_service = OpenAISTTService(
         api_key="not-needed",
         base_url=f"{settings.stt_base_url}/v1",
         model=settings.stt_model,
-        language=stt_language,
+        language=stt_language,  # String "de" für API-Kompatibilität
     )
 
     # LLM service (OpenAI-compatible via vLLM)
