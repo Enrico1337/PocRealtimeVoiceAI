@@ -1,0 +1,35 @@
+# vast.ai Multi-GPU Override
+# Usage: docker compose -f docker-compose.yml -f docker-compose.vast.yml up
+#
+# GPU Assignment (2x RTX 4090):
+#   GPU 0: STT + TTS (shared, ~7 GB VRAM)
+#   GPU 1: LLM (exclusive, ~20 GB VRAM)
+
+services:
+  stt:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['${STT_GPU_ID:-0}']
+              capabilities: [gpu]
+
+  llm:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['${LLM_GPU_ID:-1}']
+              capabilities: [gpu]
+    ipc: host
+
+  tts:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['${TTS_GPU_ID:-0}']
+              capabilities: [gpu]

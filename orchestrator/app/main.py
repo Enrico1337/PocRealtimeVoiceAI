@@ -9,6 +9,7 @@ Supports two transport modes:
 import asyncio
 import json
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -547,6 +548,24 @@ async def get_gpu_status():
     except Exception as e:
         logger.warning(f"Failed to fetch GPU info: {e}")
     return {"status": "unavailable", "gpu_count": 0, "gpus": []}
+
+
+@app.get("/api/system/gpu-config")
+async def get_gpu_config():
+    """Return GPU configuration for each service."""
+    return {
+        "stt": {
+            "gpu_id": os.environ.get("STT_GPU_ID", "0"),
+            "device": os.environ.get("STT_DEVICE", "cuda")
+        },
+        "llm": {
+            "gpu_id": os.environ.get("LLM_GPU_ID", "1"),
+        },
+        "tts": {
+            "gpu_id": os.environ.get("TTS_GPU_ID", "0"),
+            "device": os.environ.get("TTS_DEVICE", "cuda")
+        }
+    }
 
 
 # =============================================================================

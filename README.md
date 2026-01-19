@@ -139,6 +139,41 @@ With Daily.co transport, cloud deployment requires only port 7860 (no TURN serve
 5. Start: `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d`
 6. Access via the vast.ai assigned URL
 
+## vast.ai Multi-GPU Deployment
+
+For instances with multiple GPUs (e.g., 2x RTX 4090), use the Multi-GPU override to distribute services optimally.
+
+### GPU Assignment
+
+| Service | GPU | VRAM Usage |
+|---------|-----|------------|
+| STT     | 0   | ~3-4 GB    |
+| TTS     | 0   | ~2-3 GB    |
+| LLM     | 1   | ~20-24 GB  |
+
+### Start with Multi-GPU
+
+```bash
+# Configure .env
+cp .env.example .env
+# Adjust GPU IDs if needed (STT_GPU_ID, TTS_GPU_ID, LLM_GPU_ID)
+
+# Start with multi-GPU override
+docker compose -f docker-compose.yml -f docker-compose.vast.yml up -d
+```
+
+### Verify GPU Assignment
+
+```bash
+# Check GPU allocation per container
+docker exec poc-stt nvidia-smi
+docker exec poc-tts nvidia-smi
+docker exec poc-llm nvidia-smi
+
+# Check GPU config via API
+curl http://localhost:7860/api/system/gpu-config
+```
+
 ## Troubleshooting
 
 For comprehensive troubleshooting, see **[AGENTS.md](AGENTS.md)** - a detailed guide for diagnosing and fixing issues (also useful for AI agents).
