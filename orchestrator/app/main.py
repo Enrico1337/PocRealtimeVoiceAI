@@ -66,6 +66,14 @@ class HTTPTTSService(TTSService):
         super().__init__(sample_rate=sample_rate)
         self.base_url = base_url.rstrip("/")
         self._client = None
+        # Store sample_rate directly since we're not in the pipeline
+        # and start() won't be called to initialize _sample_rate
+        self._output_sample_rate = sample_rate
+
+    @property
+    def sample_rate(self) -> int:
+        """Override to return the stored sample rate."""
+        return self._output_sample_rate
 
     async def _get_client(self):
         """Lazy initialization of HTTP client."""
