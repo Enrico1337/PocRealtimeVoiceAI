@@ -7,8 +7,10 @@ Supports two transport modes:
 """
 
 import asyncio
+import io
 import json
 import logging
+import wave
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -24,7 +26,7 @@ from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.processors.aggregators.llm_response_universal import LLMContextAggregatorPair
 from pipecat.services.openai.llm import OpenAILLMService
-from pipecat.services.ai_services import STTService
+from pipecat.services.stt_service import STTService
 from typing import AsyncGenerator
 from pipecat.transports.smallwebrtc.request_handler import (
     SmallWebRTCRequestHandler,
@@ -61,11 +63,12 @@ class FasterWhisperSTTService(STTService):
     in the multipart form data, ensuring compatibility with faster-whisper-server.
     """
 
-    def __init__(self, base_url: str, model: str, language: str = "de"):
+    def __init__(self, base_url: str, model: str, language: str = "de", sample_rate: int = 16000):
         super().__init__()
         self._base_url = base_url.rstrip("/")
         self._model = model
         self._language = language
+        self._sample_rate = sample_rate
         self._client = None
         logger.info(f"FasterWhisperSTTService initialized: model={model}, language={language}, url={base_url}")
 
@@ -78,19 +81,32 @@ class FasterWhisperSTTService(STTService):
             )
         return self._client
 
+    def _pcm_to_wav(self, pcm_bytes: bytes) -> bytes:
+        """Convert raw PCM bytes to WAV format with proper headers."""
+        buffer = io.BytesIO()
+        with wave.open(buffer, "wb") as wf:
+            wf.setnchannels(1)              # Mono
+            wf.setsampwidth(2)              # 16-bit (2 bytes)
+            wf.setframerate(self._sample_rate)
+            wf.writeframes(pcm_bytes)
+        return buffer.getvalue()
+
     async def run_stt(self, audio: bytes) -> AsyncGenerator[Frame, None]:
         """Transcribe audio using faster-whisper-server API."""
         try:
             client = await self._get_client()
 
+            # Convert raw PCM to proper WAV format
+            wav_audio = self._pcm_to_wav(audio)
+
             import aiohttp
             form = aiohttp.FormData()
-            form.add_field('file', audio, filename='audio.wav', content_type='audio/wav')
+            form.add_field('file', wav_audio, filename='audio.wav', content_type='audio/wav')
             form.add_field('model', self._model)
             form.add_field('language', self._language)  # Explicit string!
             form.add_field('response_format', 'json')
 
-            logger.debug(f"Sending STT request: model={self._model}, language={self._language}, audio_size={len(audio)}")
+            logger.debug(f"Sending STT request: model={self._model}, language={self._language}, audio_size={len(wav_audio)} (original PCM: {len(audio)})")
 
             async with client.post(
                 f"{self._base_url}/v1/audio/transcriptions",
