@@ -56,22 +56,31 @@ CLIENTS_DIR = Path(__file__).parent / "clients"
 
 
 class HTTPTTSService(TTSService):
-    """TTS Service that calls our custom HTTP TTS endpoint."""
+    """TTS Service that calls our custom HTTP TTS endpoint.
+
+    Uses lazy initialization for the HTTP client to avoid issues when
+    the service is not directly in the pipeline (e.g., used by SentenceAggregator).
+    """
 
     def __init__(self, base_url: str, sample_rate: int = 24000):
         super().__init__(sample_rate=sample_rate)
         self.base_url = base_url.rstrip("/")
         self._client = None
 
-    async def start(self, frame: Frame):
-        import httpx
-        self._client = httpx.AsyncClient(timeout=60.0)
-        await super().start(frame)
+    async def _get_client(self):
+        """Lazy initialization of HTTP client."""
+        if self._client is None:
+            import aiohttp
+            self._client = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=60.0)
+            )
+        return self._client
 
-    async def stop(self, frame: Frame):
+    async def cleanup(self):
+        """Cleanup HTTP client."""
         if self._client:
-            await self._client.aclose()
-        await super().stop(frame)
+            await self._client.close()
+            self._client = None
 
     async def run_tts(self, text: str):
         """Generate speech from text and yield audio frames."""
@@ -79,7 +88,8 @@ class HTTPTTSService(TTSService):
             return
 
         try:
-            response = await self._client.post(
+            client = await self._get_client()
+            async with client.post(
                 f"{self.base_url}/v1/audio/speech",
                 json={
                     "model": "chatterbox",
@@ -88,28 +98,53 @@ class HTTPTTSService(TTSService):
                     "response_format": "pcm",
                     "speed": 1.0
                 }
-            )
-            response.raise_for_status()
+            ) as response:
+                response.raise_for_status()
+                audio_data = await response.read()
 
-            # Yield audio in chunks
-            audio_data = response.content
-            chunk_size = 4800  # 100ms at 24kHz, 16-bit
-            for i in range(0, len(audio_data), chunk_size):
-                chunk = audio_data[i:i + chunk_size]
-                yield chunk
+                # Yield audio in chunks (100ms at 24kHz, 16-bit mono)
+                chunk_size = 4800
+                for i in range(0, len(audio_data), chunk_size):
+                    chunk = audio_data[i:i + chunk_size]
+                    yield chunk
 
         except Exception as e:
             logger.error(f"TTS error: {e}")
 
 
 class SentenceAggregator(FrameProcessor):
-    """Aggregates text into sentences for TTS."""
+    """Aggregates text into sentences for TTS.
+
+    Collects text frames and generates TTS audio when sentence boundaries are detected.
+    Includes error handling to prevent pipeline breakage on TTS failures.
+    """
 
     def __init__(self, tts_service: HTTPTTSService):
         super().__init__()
         self.tts_service = tts_service
         self._buffer = ""
         self._sentence_endings = ".!?"
+
+    async def _generate_tts_audio(self, text: str, direction: FrameDirection):
+        """Generate TTS audio for text and push frames.
+
+        Args:
+            text: Text to synthesize
+            direction: Frame direction for pushing frames
+        """
+        from pipecat.frames.frames import AudioRawFrame
+
+        try:
+            async for audio_chunk in self.tts_service.run_tts(text):
+                audio_frame = AudioRawFrame(
+                    audio=audio_chunk,
+                    sample_rate=self.tts_service.sample_rate,
+                    num_channels=1
+                )
+                await self.push_frame(audio_frame, direction)
+        except Exception as e:
+            logger.error(f"SentenceAggregator TTS error for '{text[:50]}...': {e}")
+            # Don't re-raise - allow pipeline to continue without audio
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
@@ -133,32 +168,46 @@ class SentenceAggregator(FrameProcessor):
 
                     if sentence:
                         # Generate TTS for this sentence
-                        async for audio_chunk in self.tts_service.run_tts(sentence):
-                            from pipecat.frames.frames import AudioRawFrame
-                            audio_frame = AudioRawFrame(
-                                audio=audio_chunk,
-                                sample_rate=self.tts_service.sample_rate,
-                                num_channels=1
-                            )
-                            await self.push_frame(audio_frame, direction)
+                        await self._generate_tts_audio(sentence, direction)
                 else:
                     break
 
         elif isinstance(frame, EndFrame):
             # Flush remaining buffer
             if self._buffer.strip():
-                async for audio_chunk in self.tts_service.run_tts(self._buffer.strip()):
-                    from pipecat.frames.frames import AudioRawFrame
-                    audio_frame = AudioRawFrame(
-                        audio=audio_chunk,
-                        sample_rate=self.tts_service.sample_rate,
-                        num_channels=1
-                    )
-                    await self.push_frame(audio_frame, direction)
+                await self._generate_tts_audio(self._buffer.strip(), direction)
                 self._buffer = ""
             await self.push_frame(frame, direction)
         else:
             await self.push_frame(frame, direction)
+
+    async def cleanup(self):
+        """Cleanup TTS service resources."""
+        if self.tts_service:
+            await self.tts_service.cleanup()
+
+
+def _get_stt_language():
+    """Map language string to Pipecat Language enum."""
+    language_map = {
+        "de": Language.DE,
+        "en": Language.EN,
+        "es": Language.ES,
+        "fr": Language.FR,
+        "it": Language.IT,
+        "pt": Language.PT,
+        "nl": Language.NL,
+        "pl": Language.PL,
+        "ru": Language.RU,
+        "zh": Language.ZH,
+        "ja": Language.JA,
+        "ko": Language.KO,
+    }
+    lang_code = settings.stt_language.lower()
+    if lang_code in language_map:
+        return language_map[lang_code]
+    logger.warning(f"Unknown language '{lang_code}', defaulting to German")
+    return Language.DE
 
 
 def create_pipeline_components(session_id: Optional[str] = None):
@@ -166,11 +215,14 @@ def create_pipeline_components(session_id: Optional[str] = None):
     global rag_service, settings
 
     # STT service (OpenAI-compatible via faster-whisper-server)
+    stt_language = _get_stt_language()
+    logger.info(f"Configuring STT service with language: {stt_language}")
+
     stt_service = OpenAISTTService(
         api_key="not-needed",
         base_url=f"{settings.stt_base_url}/v1",
         model=settings.stt_model,
-        language=Language.DE,
+        language=stt_language,
     )
 
     # LLM service (OpenAI-compatible via vLLM)
@@ -260,6 +312,8 @@ async def run_local_bot(webrtc_connection: SmallWebRTCConnection) -> None:
     except Exception as e:
         logger.error(f"Session {session_metrics.session_id} error: {e}", exc_info=True)
     finally:
+        # Cleanup resources
+        await components["sentence_aggregator"].cleanup()
         session_metrics.log_summary()
         logger.info(f"Session {session_metrics.session_id} ended")
 
@@ -310,6 +364,8 @@ async def run_daily_bot(room_info: DailyRoomInfo, session_id: str) -> None:
         logger.error(f"Session {session_id} error: {e}", exc_info=True)
         await event_manager.emit_error(session_id, str(e), "pipeline")
     finally:
+        # Cleanup resources
+        await components["sentence_aggregator"].cleanup()
         session_metrics.log_summary()
         await event_manager.emit_connection(session_id, "disconnected")
         logger.info(f"Session {session_id} ended")

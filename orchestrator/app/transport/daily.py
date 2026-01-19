@@ -103,7 +103,7 @@ class DailyTransportManager:
             params=DailyParams(
                 audio_in_enabled=True,
                 audio_out_enabled=True,
-                vad_enabled=True,
+                # Note: vad_enabled is deprecated - use audio_in_enabled + vad_analyzer
                 vad_analyzer=SileroVADAnalyzer(
                     params=VADParams(stop_secs=vad_stop_secs)
                 ),
