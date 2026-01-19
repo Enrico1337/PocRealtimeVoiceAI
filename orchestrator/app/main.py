@@ -419,7 +419,7 @@ async def lifespan(app: FastAPI):
 
 # Create FastAPI app
 app = FastAPI(
-    title="POC Realtime Voice AI",
+    title="Proof of Concept Voice AI",
     description="Self-hosted voice assistant with STT, LLM, RAG, and TTS",
     version="0.1.0",
     lifespan=lifespan
@@ -444,6 +444,46 @@ async def health_check():
         "transport_mode": settings.transport_mode.value if settings else "unknown",
         "rag_initialized": rag_service._initialized if rag_service else False
     }
+
+
+# =============================================================================
+# System Info Endpoints
+# =============================================================================
+
+@app.get("/api/system/info")
+async def get_system_info():
+    """Return system configuration and model information."""
+    return {
+        "application": {
+            "name": "Proof of Concept Voice AI",
+            "version": "0.1.0",
+            "transport_mode": settings.transport_mode.value
+        },
+        "models": {
+            "stt": {"name": settings.stt_model, "language": settings.stt_language},
+            "llm": {"name": settings.llm_model},
+            "tts": {"name": "chatterbox", "sample_rate": 24000},
+            "embedding": {"name": settings.embedding_model}
+        },
+        "rag": {
+            "enabled": rag_service._initialized if rag_service else False,
+            "top_k": settings.rag_top_k
+        }
+    }
+
+
+@app.get("/api/system/gpu")
+async def get_gpu_status():
+    """Aggregate GPU status from TTS service."""
+    import aiohttp
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as session:
+            async with session.get(f"{settings.tts_base_url}/gpu") as response:
+                if response.status == 200:
+                    return await response.json()
+    except Exception as e:
+        logger.warning(f"Failed to fetch GPU info: {e}")
+    return {"status": "unavailable", "gpu_count": 0, "gpus": []}
 
 
 # =============================================================================

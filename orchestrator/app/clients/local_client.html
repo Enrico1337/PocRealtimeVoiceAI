@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>POC Voice AI - Local</title>
+    <title>Proof of Concept Voice AI - Local</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -199,11 +199,28 @@
             color: #ff6b6b;
             margin-top: 1rem;
         }
+
+        /* System Config Panel */
+        .config-item { display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        .config-item:last-child { border-bottom: none; }
+        .config-label { color: #8892b0; font-size: 0.85rem; }
+        .config-value { color: #6bcb77; font-family: monospace; font-size: 0.8rem; text-align: right; max-width: 60%; word-break: break-all; }
+        .model-name { color: #64b5f6; }
+
+        /* GPU Panel */
+        .gpu-card { background: rgba(0,0,0,0.2); border-radius: 8px; padding: 0.75rem; margin-bottom: 0.5rem; }
+        .gpu-card:last-child { margin-bottom: 0; }
+        .gpu-name { color: #64b5f6; font-size: 0.9rem; margin-bottom: 0.5rem; }
+        .gpu-stat { display: flex; justify-content: space-between; margin-bottom: 0.3rem; }
+        .gpu-stat-label { color: #8892b0; font-size: 0.8rem; }
+        .gpu-stat-value { color: #fff; font-family: monospace; }
+        .vram-bar { height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden; margin-top: 0.5rem; }
+        .vram-fill { height: 100%; transition: width 0.3s ease; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>POC Voice AI</h1>
+        <h1>Proof of Concept Voice AI</h1>
         <p class="subtitle">Self-hosted Realtime Voice Assistant</p>
         <div class="mode-badge">Local Mode (LAN)</div>
 
@@ -255,6 +272,41 @@
                     <p><strong>Best for:</strong> Same network (LAN) or localhost testing.</p>
                     <p><strong>Note:</strong> Real-time logging requires Daily.co mode.</p>
                 </div>
+            </div>
+
+            <!-- System Configuration Panel -->
+            <div class="panel">
+                <h3><span class="icon">&#9881;</span> System Configuration</h3>
+                <div class="config-item">
+                    <span class="config-label">STT Model</span>
+                    <span class="config-value model-name" id="sttModel">Loading...</span>
+                </div>
+                <div class="config-item">
+                    <span class="config-label">Language</span>
+                    <span class="config-value" id="sttLanguage">-</span>
+                </div>
+                <div class="config-item">
+                    <span class="config-label">LLM Model</span>
+                    <span class="config-value model-name" id="llmModel">Loading...</span>
+                </div>
+                <div class="config-item">
+                    <span class="config-label">TTS Model</span>
+                    <span class="config-value model-name" id="ttsModel">Loading...</span>
+                </div>
+                <div class="config-item">
+                    <span class="config-label">Embedding</span>
+                    <span class="config-value model-name" id="embeddingModel">Loading...</span>
+                </div>
+                <div class="config-item">
+                    <span class="config-label">RAG</span>
+                    <span class="config-value" id="ragStatus">-</span>
+                </div>
+            </div>
+
+            <!-- GPU Status Panel -->
+            <div class="panel">
+                <h3><span class="icon">&#128187;</span> GPU Status</h3>
+                <div id="gpuContainer"><div style="color: #8892b0; text-align: center;">Loading...</div></div>
             </div>
 
             <!-- Audio Test Panel -->
@@ -623,6 +675,68 @@
         window.addEventListener('beforeunload', () => {
             stopTest();
             disconnect();
+        });
+
+        // Load system configuration
+        async function loadSystemInfo() {
+            try {
+                const response = await fetch('/api/system/info');
+                const data = await response.json();
+
+                const truncate = (name) => {
+                    const parts = name.split('/');
+                    return parts.length > 1 ? parts[parts.length - 1] : name;
+                };
+
+                document.getElementById('sttModel').textContent = truncate(data.models.stt.name);
+                document.getElementById('sttModel').title = data.models.stt.name;
+                document.getElementById('sttLanguage').textContent = data.models.stt.language.toUpperCase();
+                document.getElementById('llmModel').textContent = truncate(data.models.llm.name);
+                document.getElementById('llmModel').title = data.models.llm.name;
+                document.getElementById('ttsModel').textContent = data.models.tts.name;
+                document.getElementById('embeddingModel').textContent = truncate(data.models.embedding.name);
+                document.getElementById('embeddingModel').title = data.models.embedding.name;
+                document.getElementById('ragStatus').textContent = data.rag.enabled ? 'Enabled' : 'Disabled';
+                document.getElementById('ragStatus').style.color = data.rag.enabled ? '#6bcb77' : '#ff6b6b';
+            } catch (e) { console.error('Failed to load system info:', e); }
+        }
+
+        // Load GPU status
+        async function loadGpuStatus() {
+            const container = document.getElementById('gpuContainer');
+            try {
+                const response = await fetch('/api/system/gpu');
+                const data = await response.json();
+
+                if (data.gpu_count === 0) {
+                    container.innerHTML = '<div style="color: #8892b0; text-align: center;">No GPU detected</div>';
+                    return;
+                }
+
+                let html = '';
+                for (const gpu of data.gpus) {
+                    const color = gpu.memory_percent > 90 ? '#ff6b6b' : gpu.memory_percent > 70 ? '#ffd93d' : '#6bcb77';
+                    html += `
+                        <div class="gpu-card">
+                            <div class="gpu-name">GPU ${gpu.index}: ${gpu.name}</div>
+                            <div class="gpu-stat">
+                                <span class="gpu-stat-label">VRAM</span>
+                                <span class="gpu-stat-value">${gpu.memory_used_mb} / ${gpu.memory_total_mb} MB (${gpu.memory_percent}%)</span>
+                            </div>
+                            <div class="vram-bar"><div class="vram-fill" style="width: ${gpu.memory_percent}%; background: ${color}"></div></div>
+                        </div>`;
+                }
+                container.innerHTML = html;
+            } catch (e) {
+                container.innerHTML = '<div style="color: #ff6b6b; text-align: center;">GPU info unavailable</div>';
+            }
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            loadSystemInfo();
+            loadGpuStatus();
+            setInterval(loadGpuStatus, 5000); // Poll every 5 seconds
         });
     </script>
 </body>

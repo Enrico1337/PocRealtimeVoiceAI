@@ -142,6 +142,31 @@ async def list_models():
     }
 
 
+@app.get("/gpu")
+async def get_gpu_info():
+    """Return GPU information via pynvml."""
+    try:
+        import pynvml
+        pynvml.nvmlInit()
+        device_count = pynvml.nvmlDeviceGetCount()
+        gpus = []
+        for i in range(device_count):
+            handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+            name = pynvml.nvmlDeviceGetName(handle)
+            memory = pynvml.nvmlDeviceGetMemoryInfo(handle)
+            gpus.append({
+                "index": i,
+                "name": name if isinstance(name, str) else name.decode(),
+                "memory_total_mb": memory.total // (1024 * 1024),
+                "memory_used_mb": memory.used // (1024 * 1024),
+                "memory_percent": round(memory.used / memory.total * 100, 1)
+            })
+        pynvml.nvmlShutdown()
+        return {"status": "ok", "gpu_count": device_count, "gpus": gpus}
+    except Exception as e:
+        return {"status": "error", "message": str(e), "gpu_count": 0, "gpus": []}
+
+
 def main():
     """Entry point."""
     host = os.environ.get("TTS_HOST", "0.0.0.0")
