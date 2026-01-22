@@ -1,0 +1,4 @@
+# Constraints für Build-Dependencies
+# Verhindert Kompilierung alter numpy/pandas Versionen (Python 3.10 inkompatibel)
+numpy>=1.24.0
+pandas>=2.0.0

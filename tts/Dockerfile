@@ -34,13 +34,13 @@ WORKDIR /app
 
 # Copy requirements first for better caching
 COPY requirements.txt .
+COPY constraints.txt .
 
 # Install Python dependencies
-# WICHTIG: Numpy/scipy ZUERST installieren um Build-Probleme zu vermeiden
-# (coqui-tts Dependencies versuchen sonst alte numpy-Version zu kompilieren)
+# WICHTIG: Constraints-File erzwingt numpy-Version auch für Build-Dependencies
+# (verhindert Kompilierung alter numpy-Versionen die mit Python 3.10 inkompatibel sind)
 RUN pip install --upgrade pip && \
-    pip install numpy>=1.24.0 scipy>=1.11.0 && \
-    pip install -r requirements.txt
+    pip install -c constraints.txt -r requirements.txt
 
 # Copy application code
 COPY app/ ./app/

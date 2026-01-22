@@ -22,6 +22,7 @@ Wenn du eine API/SDK verwendest oder eine Implementierungs-Variante auswählst:
 - Führe Build/Lint/Tests aus (oder liefere exakt die Befehle, die ich ausführen soll).
 - Kein "Drive-by Refactor": keine Neben-Verbesserungen ohne explizite Anforderung.
 - Markiere Annahmen klar und nenne relevante Doku-Links, die du genutzt hast (kurz).
+- **Nach erfolgreicher Implementierung**: Änderungen committen und auf Git pushen mit verständlichem Commit-Kommentar.
 
 ---
 
