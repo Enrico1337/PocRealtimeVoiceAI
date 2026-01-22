@@ -37,10 +37,13 @@ COPY requirements.txt .
 COPY constraints.txt .
 
 # Install Python dependencies
-# WICHTIG: Constraints-File erzwingt numpy-Version auch für Build-Dependencies
-# (verhindert Kompilierung alter numpy-Versionen die mit Python 3.10 inkompatibel sind)
+# WICHTIG:
+# 1. numpy/scipy ZUERST installieren (pkuseg braucht numpy bei setup.py)
+# 2. --no-build-isolation: nutzt vorhandenes env statt isoliertes Build-env
+# 3. Constraints: steuern Versionen für alle Dependencies
 RUN pip install --upgrade pip && \
-    pip install -c constraints.txt -r requirements.txt
+    pip install numpy>=1.24.0 scipy>=1.11.0 && \
+    pip install --no-build-isolation -c constraints.txt -r requirements.txt
 
 # Copy application code
 COPY app/ ./app/
