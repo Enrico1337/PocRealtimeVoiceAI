@@ -54,12 +54,15 @@ COPY app/ ./app/
 EXPOSE 8000
 
 # Environment defaults
+# COQUI_TOS_AGREED=1 accepts the Coqui Public Model License (CPML) for non-commercial use
+# This skips the interactive license prompt that would fail in Docker (no stdin)
 ENV TTS_PROVIDER=chatterbox \
     TTS_DEVICE=cuda \
     TTS_SAMPLE_RATE=24000 \
     TTS_LANGUAGE=de \
     TTS_HOST=0.0.0.0 \
-    TTS_PORT=8000
+    TTS_PORT=8000 \
+    COQUI_TOS_AGREED=1
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
