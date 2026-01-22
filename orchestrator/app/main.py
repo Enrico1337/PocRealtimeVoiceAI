@@ -517,6 +517,23 @@ async def health_check():
 @app.get("/api/system/info")
 async def get_system_info():
     """Return system configuration and model information."""
+    import aiohttp
+
+    # Fetch TTS info from service
+    tts_info = {"name": "unknown", "sample_rate": 24000}
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as session:
+            async with session.get(f"{settings.tts_base_url}/health") as response:
+                if response.status == 200:
+                    data = await response.json()
+                    tts_info = {
+                        "name": data.get("provider", "unknown"),
+                        "sample_rate": data.get("sample_rate", 24000),
+                        "language": data.get("language", "unknown"),
+                    }
+    except Exception as e:
+        logger.warning(f"Failed to fetch TTS info: {e}")
+
     return {
         "application": {
             "name": "Proof of Concept Voice AI",
@@ -526,7 +543,7 @@ async def get_system_info():
         "models": {
             "stt": {"name": settings.stt_model, "language": settings.stt_language},
             "llm": {"name": settings.llm_model},
-            "tts": {"name": "chatterbox", "sample_rate": 24000},
+            "tts": tts_info,
             "embedding": {"name": settings.embedding_model}
         },
         "rag": {
@@ -538,16 +555,49 @@ async def get_system_info():
 
 @app.get("/api/system/gpu")
 async def get_gpu_status():
-    """Aggregate GPU status from TTS service."""
+    """Aggregate GPU status from all GPU-using services."""
     import aiohttp
-    try:
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as session:
-            async with session.get(f"{settings.tts_base_url}/gpu") as response:
-                if response.status == 200:
-                    return await response.json()
-    except Exception as e:
-        logger.warning(f"Failed to fetch GPU info: {e}")
-    return {"status": "unavailable", "gpu_count": 0, "gpus": []}
+
+    gpu_info = {}
+    services = [
+        ("tts", settings.tts_base_url),
+    ]
+
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as session:
+        for service_name, base_url in services:
+            try:
+                async with session.get(f"{base_url}/gpu") as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        for gpu in data.get("gpus", []):
+                            gpu_id = gpu.get("index", 0)
+                            if gpu_id not in gpu_info:
+                                gpu_info[gpu_id] = gpu
+                                gpu_info[gpu_id]["services"] = [service_name]
+                            else:
+                                gpu_info[gpu_id]["services"].append(service_name)
+            except Exception as e:
+                logger.warning(f"Failed to fetch GPU info from {service_name}: {e}")
+
+    # Add LLM GPU from config (vLLM doesn't expose /gpu)
+    llm_gpu_id = int(os.environ.get("LLM_GPU_ID", "1"))
+    if llm_gpu_id not in gpu_info:
+        gpu_info[llm_gpu_id] = {
+            "index": llm_gpu_id,
+            "name": f"GPU {llm_gpu_id} (LLM)",
+            "services": ["llm"],
+            "memory_used": 0,
+            "memory_total": 0,
+        }
+    else:
+        gpu_info[llm_gpu_id]["services"].append("llm")
+
+    gpus = sorted(gpu_info.values(), key=lambda x: x.get("index", 0))
+    return {
+        "status": "available" if gpus else "unavailable",
+        "gpu_count": len(gpus),
+        "gpus": gpus
+    }
 
 
 @app.get("/api/system/gpu-config")

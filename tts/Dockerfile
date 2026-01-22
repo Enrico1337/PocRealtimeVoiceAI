@@ -42,7 +42,8 @@ ARG TTS_BUILD_PROVIDER=chatterbox
 RUN pip install --upgrade pip && \
     pip install -r requirements.txt && \
     if [ "$TTS_BUILD_PROVIDER" = "coqui" ]; then \
-        pip install --no-build-isolation coqui-tts>=0.27.3; \
+        pip install --no-build-isolation coqui-tts>=0.27.3 && \
+        pip install torchcodec; \
     else \
         pip install --no-build-isolation chatterbox-tts>=0.1.6; \
     fi
