@@ -84,7 +84,7 @@ services:
       - "8002:8000"
 
   # =============================================================================
-  # TTS - Text-to-Speech (Custom Chatterbox Service)
+  # TTS - Text-to-Speech (Multi-Provider: Chatterbox / Coqui XTTS-v2)
   # =============================================================================
   tts:
     build:
@@ -95,11 +95,15 @@ services:
     networks:
       - voice-net
     environment:
+      - TTS_PROVIDER=${TTS_PROVIDER:-chatterbox}
       - TTS_DEVICE=${TTS_DEVICE:-cuda}
       - TTS_SAMPLE_RATE=${TTS_SAMPLE_RATE:-24000}
       - TTS_LANGUAGE=${TTS_LANGUAGE:-de}
+      - TTS_COQUI_MODEL=${TTS_COQUI_MODEL:-tts_models/multilingual/multi-dataset/xtts_v2}
+      - TTS_COQUI_SPEAKER_WAV=${TTS_COQUI_SPEAKER_WAV:-}
     volumes:
       - hf-cache:/root/.cache/huggingface
+      - ~/.local/share/tts:/root/.local/share/tts
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 15s

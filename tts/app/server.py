@@ -1,5 +1,5 @@
 """
-TTS Server: OpenAI-compatible API for Chatterbox TTS.
+TTS Server: OpenAI-compatible API with multi-provider support.
 """
 
 import logging
@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
-from .tts_engine import get_engine
+from .engines import get_engine, TTSProvider
 
 # Configure logging
 logging.basicConfig(
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 class SpeechRequest(BaseModel):
     """OpenAI-compatible speech synthesis request."""
-    model: str = Field(default="chatterbox", description="Model to use")
+    model: str = Field(default="tts", description="Model to use")
     input: str = Field(..., description="Text to synthesize")
     voice: str = Field(default="default", description="Voice to use")
     response_format: Literal["wav", "pcm", "mp3"] = Field(
@@ -45,7 +45,14 @@ async def lifespan(app: FastAPI):
     engine = get_engine()
     engine.initialize()
 
-    logger.info(f"TTS service ready (device: {engine.device}, sample_rate: {engine.sample_rate}, language: {engine.language}, multilingual: {engine._is_multilingual})")
+    logger.info(
+        f"TTS service ready ("
+        f"provider: {engine.provider.value}, "
+        f"device: {engine.device}, "
+        f"sample_rate: {engine.sample_rate}, "
+        f"language: {engine.language}"
+        f")"
+    )
 
     yield
 
@@ -53,9 +60,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Chatterbox TTS Service",
-    description="OpenAI-compatible TTS API using Chatterbox",
-    version="0.1.0",
+    title="TTS Service",
+    description="OpenAI-compatible TTS API with multi-provider support",
+    version="0.2.0",
     lifespan=lifespan
 )
 
@@ -67,10 +74,10 @@ async def health_check():
     return {
         "status": "healthy" if engine.is_initialized else "initializing",
         "service": "tts",
+        "provider": engine.provider.value,
         "device": engine.device,
         "sample_rate": engine.sample_rate,
         "language": engine.language,
-        "multilingual": getattr(engine, '_is_multilingual', False)
     }
 
 
@@ -108,7 +115,7 @@ async def create_speech(request: SpeechRequest):
 
         duration_ms = (time.perf_counter() - start_time) * 1000
         logger.info(
-            f"Synthesized {len(request.input)} chars in {duration_ms:.0f}ms "
+            f"[{engine.provider.value}] Synthesized {len(request.input)} chars in {duration_ms:.0f}ms "
             f"({len(audio_bytes)} bytes)"
         )
 
@@ -116,7 +123,8 @@ async def create_speech(request: SpeechRequest):
             content=audio_bytes,
             media_type=media_type,
             headers={
-                "X-Synthesis-Time-Ms": str(int(duration_ms))
+                "X-Synthesis-Time-Ms": str(int(duration_ms)),
+                "X-TTS-Provider": engine.provider.value
             }
         )
 
@@ -131,14 +139,15 @@ async def create_speech(request: SpeechRequest):
 @app.get("/v1/models")
 async def list_models():
     """List available models (OpenAI compatibility)."""
+    engine = get_engine()
     return {
         "object": "list",
         "data": [
             {
-                "id": "chatterbox",
+                "id": engine.provider.value,
                 "object": "model",
                 "created": 1700000000,
-                "owned_by": "resemble-ai"
+                "owned_by": "local"
             }
         ]
     }

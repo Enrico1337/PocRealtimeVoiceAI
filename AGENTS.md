@@ -2,6 +2,33 @@
 
 This document provides comprehensive instructions for AI agents to diagnose and fix issues with the POC Realtime Voice AI system.
 
+---
+
+## Arbeitsweise
+
+- Halte dich strikt an bestehende Projekt-Konventionen (Architektur, Naming, Lint/Formatter, Patterns).
+- Schreibe wartbaren, idiomatischen Code: kleine, klare Änderungen > große Refactors.
+- Vermeide Overengineering: implementiere nur das, was gefordert ist oder eindeutig nötig.
+
+### APIs / SDKs: keine veralteten Methoden
+
+Wenn du eine API/SDK verwendest oder eine Implementierungs-Variante auswählst:
+
+- Ermittle zuerst die **tatsächlich verwendete Version** im Repo (z.B. `*.csproj`, `Directory.Packages.props`, `package.json`, Lockfiles).
+- Prüfe **online** die **offizielle** Doku + Changelogs/Migration Guides für diese Version (oder die aktuelle stabile, falls Version unklar).
+- Prüfe auch **online** die **offizielle** Doku + Changelogs/Migration Guides für diese Version wenn du neue API oder SDKs einbindest.
+- Nutze **keine** deprecated/obsolete APIs oder alten Beispiele; bevorzuge den **empfohlenen** Weg aus der aktuellen Doku.
+- Wenn es mehrere Wege gibt: wähle den empfohlenen und begründe kurz.
+
+### Qualität & Abschluss
+
+- Ergänze/aktualisiere Tests, wenn Verhalten geändert wird.
+- Führe Build/Lint/Tests aus (oder liefere exakt die Befehle, die ich ausführen soll).
+- Kein "Drive-by Refactor": keine Neben-Verbesserungen ohne explizite Anforderung.
+- Markiere Annahmen klar und nenne relevante Doku-Links, die du genutzt hast (kurz).
+
+---
+
 ## Project Overview
 
 ```

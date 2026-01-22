@@ -1,5 +1,5 @@
 # TTS Service Dockerfile
-# Chatterbox TTS with CUDA support
+# Multi-provider TTS with CUDA support (Chatterbox + Coqui XTTS-v2)
 
 FROM pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime
 
@@ -14,12 +14,16 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TZ=Etc/UTC
 
 # Install system dependencies
+# espeak-ng: Required for Coqui TTS phonemization
+# libsndfile1-dev: Required for audio processing
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tzdata \
     build-essential \
     curl \
     ffmpeg \
     libsndfile1 \
+    libsndfile1-dev \
+    espeak-ng \
     git \
     && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime \
     && echo $TZ > /etc/timezone \
@@ -42,8 +46,10 @@ COPY app/ ./app/
 EXPOSE 8000
 
 # Environment defaults
-ENV TTS_DEVICE=cuda \
+ENV TTS_PROVIDER=chatterbox \
+    TTS_DEVICE=cuda \
     TTS_SAMPLE_RATE=24000 \
+    TTS_LANGUAGE=de \
     TTS_HOST=0.0.0.0 \
     TTS_PORT=8000
 
