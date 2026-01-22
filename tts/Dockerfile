@@ -34,16 +34,18 @@ WORKDIR /app
 
 # Copy requirements first for better caching
 COPY requirements.txt .
-COPY constraints.txt .
 
-# Install Python dependencies
-# WICHTIG:
-# 1. numpy/scipy ZUERST installieren (pkuseg braucht numpy bei setup.py)
-# 2. --no-build-isolation: nutzt vorhandenes env statt isoliertes Build-env
-# 3. Constraints: steuern Versionen für alle Dependencies
+# Build argument for TTS provider selection
+ARG TTS_BUILD_PROVIDER=chatterbox
+
+# Install Python dependencies based on selected provider
 RUN pip install --upgrade pip && \
-    pip install numpy>=1.24.0 scipy>=1.11.0 && \
-    pip install --no-build-isolation -c constraints.txt -r requirements.txt
+    pip install -r requirements.txt && \
+    if [ "$TTS_BUILD_PROVIDER" = "coqui" ]; then \
+        pip install --no-build-isolation coqui-tts>=0.27.3; \
+    else \
+        pip install --no-build-isolation chatterbox-tts>=0.1.6; \
+    fi
 
 # Copy application code
 COPY app/ ./app/

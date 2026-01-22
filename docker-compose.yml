@@ -90,6 +90,8 @@ services:
     build:
       context: ./tts
       dockerfile: Dockerfile
+      args:
+        TTS_BUILD_PROVIDER: ${TTS_PROVIDER:-chatterbox}
     container_name: poc-tts
     restart: unless-stopped
     networks:

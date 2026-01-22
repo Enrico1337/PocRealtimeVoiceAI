@@ -2,13 +2,7 @@
 fastapi>=0.109.0
 uvicorn[standard]>=0.27.0
 
-# Chatterbox TTS
-chatterbox-tts>=0.1.6
-
-# Coqui TTS (XTTS-v2)
-coqui-tts>=0.27.3
-
-# PyTorch (CUDA)
+# PyTorch (CUDA) - already in base image, but ensure version
 torch>=2.1.0
 torchaudio>=2.1.0
 
