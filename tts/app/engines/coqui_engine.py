@@ -22,6 +22,7 @@ class CoquiEngine(TTSEngine):
         self.model = None
         self.model_name = config.coqui_model
         self.speaker_wav = config.coqui_speaker_wav
+        self.speaker = config.coqui_speaker
 
         # Check CUDA availability
         if self.device == "cuda" and not torch.cuda.is_available():
@@ -114,9 +115,11 @@ class CoquiEngine(TTSEngine):
             "language": self.language,
         }
 
-        # Add speaker_wav for voice cloning if configured
+        # Add speaker: prefer speaker_wav for voice cloning, fallback to preset speaker
         if self.speaker_wav:
             tts_kwargs["speaker_wav"] = self.speaker_wav
+        else:
+            tts_kwargs["speaker"] = self.speaker
 
         wav = self.model.tts(**tts_kwargs)
 

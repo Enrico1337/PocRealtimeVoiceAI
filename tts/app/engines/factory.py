@@ -62,6 +62,7 @@ def get_config_from_env() -> TTSConfig:
         cfg_weight=float(os.environ.get("TTS_CFG_WEIGHT", "0.5")),
         coqui_model=os.environ.get("TTS_COQUI_MODEL", "tts_models/multilingual/multi-dataset/xtts_v2"),
         coqui_speaker_wav=os.environ.get("TTS_COQUI_SPEAKER_WAV") or None,
+        coqui_speaker=os.environ.get("TTS_COQUI_SPEAKER", "Claribel Dervla"),
     )
 
 

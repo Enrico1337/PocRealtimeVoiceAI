@@ -28,3 +28,4 @@ class TTSConfig:
     # Coqui-specific
     coqui_model: str = "tts_models/multilingual/multi-dataset/xtts_v2"
     coqui_speaker_wav: Optional[str] = None
+    coqui_speaker: str = "Claribel Dervla"  # Default preset speaker
