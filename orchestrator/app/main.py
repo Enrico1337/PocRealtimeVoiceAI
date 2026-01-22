@@ -588,8 +588,8 @@ async def get_gpu_status():
             gpus.append({
                 "index": i,
                 "name": name if isinstance(name, str) else name.decode(),
-                "memory_total": memory.total // (1024 * 1024),
-                "memory_used": memory.used // (1024 * 1024),
+                "memory_total_mb": memory.total // (1024 * 1024),
+                "memory_used_mb": memory.used // (1024 * 1024),
                 "memory_percent": round(memory.used / memory.total * 100, 1),
                 "services": services
             })
