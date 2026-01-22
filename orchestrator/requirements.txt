@@ -26,3 +26,6 @@ numpy>=1.24.0
 # WebRTC
 aiortc>=1.6.0
 aioice>=0.9.0
+
+# GPU Monitoring
+pynvml>=12.0.0

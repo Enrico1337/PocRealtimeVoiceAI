@@ -555,49 +555,54 @@ async def get_system_info():
 
 @app.get("/api/system/gpu")
 async def get_gpu_status():
-    """Aggregate GPU status from all GPU-using services."""
-    import aiohttp
+    """Get GPU status using pynvml directly.
 
-    gpu_info = {}
-    services = [
-        ("tts", settings.tts_base_url),
-    ]
+    This approach gives accurate GPU info for all GPUs in a multi-GPU setup,
+    since the orchestrator has access to all GPUs for monitoring purposes.
+    """
+    try:
+        import pynvml
+        pynvml.nvmlInit()
+        device_count = pynvml.nvmlDeviceGetCount()
 
-    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as session:
-        for service_name, base_url in services:
-            try:
-                async with session.get(f"{base_url}/gpu") as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        for gpu in data.get("gpus", []):
-                            gpu_id = gpu.get("index", 0)
-                            if gpu_id not in gpu_info:
-                                gpu_info[gpu_id] = gpu
-                                gpu_info[gpu_id]["services"] = [service_name]
-                            else:
-                                gpu_info[gpu_id]["services"].append(service_name)
-            except Exception as e:
-                logger.warning(f"Failed to fetch GPU info from {service_name}: {e}")
+        # GPU service assignments from config
+        tts_gpu = int(os.environ.get("TTS_GPU_ID", "0"))
+        llm_gpu = int(os.environ.get("LLM_GPU_ID", "1"))
+        stt_gpu = int(os.environ.get("STT_GPU_ID", "0"))
 
-    # Add LLM GPU from config (vLLM doesn't expose /gpu)
-    llm_gpu_id = int(os.environ.get("LLM_GPU_ID", "1"))
-    if llm_gpu_id not in gpu_info:
-        gpu_info[llm_gpu_id] = {
-            "index": llm_gpu_id,
-            "name": f"GPU {llm_gpu_id} (LLM)",
-            "services": ["llm"],
-            "memory_used": 0,
-            "memory_total": 0,
+        gpus = []
+        for i in range(device_count):
+            handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+            name = pynvml.nvmlDeviceGetName(handle)
+            memory = pynvml.nvmlDeviceGetMemoryInfo(handle)
+
+            # Determine services on this GPU
+            services = []
+            if i == tts_gpu:
+                services.append("tts")
+            if i == llm_gpu:
+                services.append("llm")
+            if i == stt_gpu:
+                services.append("stt")
+
+            gpus.append({
+                "index": i,
+                "name": name if isinstance(name, str) else name.decode(),
+                "memory_total": memory.total // (1024 * 1024),
+                "memory_used": memory.used // (1024 * 1024),
+                "memory_percent": round(memory.used / memory.total * 100, 1),
+                "services": services
+            })
+
+        pynvml.nvmlShutdown()
+        return {
+            "status": "available",
+            "gpu_count": device_count,
+            "gpus": gpus
         }
-    else:
-        gpu_info[llm_gpu_id]["services"].append("llm")
-
-    gpus = sorted(gpu_info.values(), key=lambda x: x.get("index", 0))
-    return {
-        "status": "available" if gpus else "unavailable",
-        "gpu_count": len(gpus),
-        "gpus": gpus
-    }
+    except Exception as e:
+        logger.warning(f"Failed to get GPU info via pynvml: {e}")
+        return {"status": "unavailable", "gpu_count": 0, "gpus": []}
 
 
 @app.get("/api/system/gpu-config")

@@ -6,6 +6,15 @@
 #   GPU 1: LLM (exclusive, ~20 GB VRAM)
 
 services:
+  orchestrator:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
   stt:
     deploy:
       resources:
