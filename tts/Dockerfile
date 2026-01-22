@@ -36,7 +36,10 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Install Python dependencies
+# WICHTIG: Numpy/scipy ZUERST installieren um Build-Probleme zu vermeiden
+# (coqui-tts Dependencies versuchen sonst alte numpy-Version zu kompilieren)
 RUN pip install --upgrade pip && \
+    pip install numpy>=1.24.0 scipy>=1.11.0 && \
     pip install -r requirements.txt
 
 # Copy application code
