@@ -65,11 +65,13 @@ services:
     environment:
       - HF_TOKEN=${HF_TOKEN:-}
       - VLLM_ATTENTION_BACKEND=${VLLM_ATTENTION_BACKEND:-FLASHINFER}
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
     volumes:
       - hf-cache:/root/.cache/huggingface
     command: >
       --model ${LLM_MODEL:-stelterlab/Qwen3-30B-A3B-Instruct-2507-AWQ}
       --max-model-len ${LLM_MAX_CONTEXT:-32768}
+      --max-num-seqs ${LLM_MAX_NUM_SEQS:-64}
       --gpu-memory-utilization ${LLM_GPU_MEMORY:-0.85}
       --dtype auto
       --trust-remote-code
