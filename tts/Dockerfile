@@ -39,7 +39,9 @@ COPY requirements.txt .
 ARG TTS_BUILD_PROVIDER=chatterbox
 
 # Install Python dependencies based on selected provider
-RUN pip install --upgrade pip && \
+# torchvision via conda to match base image's torch (avoids operator torchvision::nms error)
+RUN conda install -y torchvision==0.20.1 -c pytorch && \
+    pip install --upgrade pip && \
     pip install -r requirements.txt && \
     if [ "$TTS_BUILD_PROVIDER" = "coqui" ]; then \
         pip install --no-build-isolation coqui-tts>=0.27.3 && \

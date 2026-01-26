@@ -2,10 +2,7 @@
 fastapi>=0.109.0
 uvicorn[standard]>=0.27.0
 
-# PyTorch (CUDA) - already in base image, but ensure version
-torch>=2.1.0
-torchaudio>=2.1.0
-torchvision>=0.20.0
+# Note: torch, torchaudio are in base image; torchvision installed via conda in Dockerfile
 
 # Audio processing
 numpy>=1.24.0
