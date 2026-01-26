@@ -39,16 +39,18 @@ COPY requirements.txt .
 ARG TTS_BUILD_PROVIDER=chatterbox
 
 # Install Python dependencies based on selected provider
-# torchvision via conda to match base image's torch (avoids operator torchvision::nms error)
-RUN conda install -y torchvision==0.20.1 -c pytorch && \
-    pip install --upgrade pip && \
+RUN pip install --upgrade pip && \
     pip install -r requirements.txt && \
     if [ "$TTS_BUILD_PROVIDER" = "coqui" ]; then \
         pip install --no-build-isolation coqui-tts>=0.27.3 && \
         pip install torchcodec; \
     else \
         pip install --no-build-isolation chatterbox-tts>=0.1.6; \
-    fi
+    fi && \
+    # Fix: Reinstall torch/torchvision from official PyTorch index (cu124)
+    # This ensures binary compatibility by using matching builds
+    # (pip-installed deps may have pulled incompatible torchvision from PyPI)
+    pip install --force-reinstall torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu124
 
 # Copy application code
 COPY app/ ./app/
