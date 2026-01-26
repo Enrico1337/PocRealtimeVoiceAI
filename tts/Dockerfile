@@ -43,6 +43,8 @@ RUN pip install --upgrade pip && \
     pip install -r requirements.txt && \
     if [ "$TTS_BUILD_PROVIDER" = "coqui" ]; then \
         pip install --no-build-isolation coqui-tts>=0.27.4 && \
+        # Pin transformers<5.0.0 (coqui-tts 0.27.4 not yet compatible with transformers 5.x)
+        pip install "transformers>=4.47.0,<5.0.0" && \
         pip install torchcodec; \
     else \
         pip install --no-build-isolation chatterbox-tts>=0.1.6; \
