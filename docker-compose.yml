@@ -104,6 +104,7 @@ services:
       - TTS_SAMPLE_RATE=${TTS_SAMPLE_RATE:-24000}
       - TTS_LANGUAGE=${TTS_LANGUAGE:-de}
       - TTS_COQUI_MODEL=${TTS_COQUI_MODEL:-tts_models/multilingual/multi-dataset/xtts_v2}
+      - TTS_COQUI_SPEAKER=${TTS_COQUI_SPEAKER:-Claribel Dervla}
       - TTS_COQUI_SPEAKER_WAV=${TTS_COQUI_SPEAKER_WAV:-}
     volumes:
       - hf-cache:/root/.cache/huggingface
