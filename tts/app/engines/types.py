@@ -22,8 +22,9 @@ class TTSConfig:
     language: str = "de"
 
     # Chatterbox-specific
-    exaggeration: float = 0.5
-    cfg_weight: float = 0.5
+    # Lower values (0.3) improve stability for German speech
+    exaggeration: float = 0.3
+    cfg_weight: float = 0.3
 
     # Coqui-specific
     coqui_model: str = "tts_models/multilingual/multi-dataset/xtts_v2"
