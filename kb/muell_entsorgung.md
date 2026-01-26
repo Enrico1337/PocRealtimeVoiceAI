@@ -34,9 +34,3 @@
 - Grünschnitt (bis 1 m³ kostenlos)
 - Bauschutt (gebührenpflichtig)
 - Schadstoffe (haushaltsübliche Mengen kostenlos)
-
-## Sperrmüllabholung
-- Anmeldung online oder telefonisch
-- Max. 5 m³ pro Abholung
-- Gebühr: 25,00 Euro
-- Vorlaufzeit: ca. 2 Wochen
