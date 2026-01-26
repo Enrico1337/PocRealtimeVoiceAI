@@ -93,13 +93,13 @@ services:
       context: ./tts
       dockerfile: Dockerfile
       args:
-        TTS_BUILD_PROVIDER: ${TTS_PROVIDER:-chatterbox}
+        TTS_BUILD_PROVIDER: ${TTS_PROVIDER:-coqui}
     container_name: poc-tts
     restart: unless-stopped
     networks:
       - voice-net
     environment:
-      - TTS_PROVIDER=${TTS_PROVIDER:-chatterbox}
+      - TTS_PROVIDER=${TTS_PROVIDER:-coqui}
       - TTS_DEVICE=${TTS_DEVICE:-cuda}
       - TTS_SAMPLE_RATE=${TTS_SAMPLE_RATE:-24000}
       - TTS_LANGUAGE=${TTS_LANGUAGE:-de}

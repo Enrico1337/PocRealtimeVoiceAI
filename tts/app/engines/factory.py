@@ -46,12 +46,12 @@ class TTSEngineFactory:
 
 def get_config_from_env() -> TTSConfig:
     """Build TTSConfig from environment variables."""
-    provider_str = os.environ.get("TTS_PROVIDER", "chatterbox").lower()
+    provider_str = os.environ.get("TTS_PROVIDER", "coqui").lower()
     try:
         provider = TTSProvider(provider_str)
     except ValueError:
-        logger.warning(f"Unknown TTS_PROVIDER '{provider_str}', defaulting to chatterbox")
-        provider = TTSProvider.CHATTERBOX
+        logger.warning(f"Unknown TTS_PROVIDER '{provider_str}', defaulting to coqui")
+        provider = TTSProvider.COQUI
 
     return TTSConfig(
         provider=provider,

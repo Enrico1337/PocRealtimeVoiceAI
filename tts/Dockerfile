@@ -36,7 +36,7 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Build argument for TTS provider selection
-ARG TTS_BUILD_PROVIDER=chatterbox
+ARG TTS_BUILD_PROVIDER=coqui
 
 # Install Python dependencies based on selected provider
 RUN pip install --upgrade pip && \
@@ -63,7 +63,7 @@ EXPOSE 8000
 # Environment defaults
 # COQUI_TOS_AGREED=1 accepts the Coqui Public Model License (CPML) for non-commercial use
 # This skips the interactive license prompt that would fail in Docker (no stdin)
-ENV TTS_PROVIDER=chatterbox \
+ENV TTS_PROVIDER=coqui \
     TTS_DEVICE=cuda \
     TTS_SAMPLE_RATE=24000 \
     TTS_LANGUAGE=de \

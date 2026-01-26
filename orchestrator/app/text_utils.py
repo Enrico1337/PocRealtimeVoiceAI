@@ -12,6 +12,84 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def normalize_german_phone_numbers(text: str) -> str:
+    """Convert phone numbers to digit-by-digit German speech.
+
+    Examples:
+        "0800-1234567" → "null acht null null eins zwei drei vier fünf sechs sieben"
+        "+49 123 456789" → "plus vier neun eins zwei drei vier fünf sechs sieben acht neun"
+    """
+    digit_words = {
+        '0': 'null', '1': 'eins', '2': 'zwei', '3': 'drei', '4': 'vier',
+        '5': 'fünf', '6': 'sechs', '7': 'sieben', '8': 'acht', '9': 'neun'
+    }
+
+    def replace_phone(match: re.Match) -> str:
+        phone = match.group(0)
+        # Keep "plus" for international prefix
+        result = phone.replace('+', 'plus ')
+        # Replace each digit with German word
+        for digit, word in digit_words.items():
+            result = result.replace(digit, word + ' ')
+        # Remove separators and clean up
+        result = re.sub(r'[-/\s]+', ' ', result)
+        return result.strip()
+
+    # Match phone number patterns:
+    # - Starting with + or 0
+    # - Containing digits, spaces, hyphens, slashes
+    # - At least 6 digits total
+    phone_pattern = r'(?<!\d)[\+]?[0-9][\d\s\-/]{5,}[\d](?!\d)'
+
+    return re.sub(phone_pattern, replace_phone, text)
+
+
+def normalize_german_times(text: str) -> str:
+    """Convert time formats to natural German speech.
+
+    Examples:
+        "9:00" → "neun Uhr"
+        "9:00 Uhr" → "neun Uhr"
+        "10:30" → "zehn Uhr dreißig"
+        "14:45 Uhr" → "vierzehn Uhr fünfundvierzig"
+    """
+    hour_words = {
+        0: 'null', 1: 'ein', 2: 'zwei', 3: 'drei', 4: 'vier', 5: 'fünf',
+        6: 'sechs', 7: 'sieben', 8: 'acht', 9: 'neun', 10: 'zehn',
+        11: 'elf', 12: 'zwölf', 13: 'dreizehn', 14: 'vierzehn', 15: 'fünfzehn',
+        16: 'sechzehn', 17: 'siebzehn', 18: 'achtzehn', 19: 'neunzehn',
+        20: 'zwanzig', 21: 'einundzwanzig', 22: 'zweiundzwanzig', 23: 'dreiundzwanzig'
+    }
+
+    minute_words = {
+        0: '', 5: 'fünf', 10: 'zehn', 15: 'fünfzehn', 20: 'zwanzig',
+        25: 'fünfundzwanzig', 30: 'dreißig', 35: 'fünfunddreißig',
+        40: 'vierzig', 45: 'fünfundvierzig', 50: 'fünfzig', 55: 'fünfundfünfzig'
+    }
+
+    def replace_time(match: re.Match) -> str:
+        hour = int(match.group(1))
+        minute = int(match.group(2))
+
+        if hour > 23:
+            return match.group(0)  # Invalid hour, keep original
+
+        hour_word = hour_words.get(hour, str(hour))
+
+        if minute == 0:
+            return f"{hour_word} Uhr"
+        elif minute in minute_words:
+            return f"{hour_word} Uhr {minute_words[minute]}"
+        else:
+            # For non-standard minutes, use digit-based approach
+            return f"{hour_word} Uhr {minute}"
+
+    # Match HH:MM or H:MM, optionally followed by " Uhr"
+    time_pattern = r'\b(\d{1,2}):(\d{2})(\s*Uhr)?(?!\d)'
+
+    return re.sub(time_pattern, replace_time, text)
+
+
 def sanitize_for_tts(text: str) -> str:
     """Prepare LLM output for TTS synthesis.
 
@@ -112,6 +190,12 @@ def sanitize_for_tts(text: str) -> str:
     }
     for abbrev, expansion in abbreviations.items():
         text = text.replace(abbrev, expansion)
+
+    # 8b. Normalize German phone numbers (read digit by digit)
+    text = normalize_german_phone_numbers(text)
+
+    # 8c. Normalize German time formats
+    text = normalize_german_times(text)
 
     # 9. Handle numbers with units (keep numbers, they're often fine)
     # Just ensure proper spacing
