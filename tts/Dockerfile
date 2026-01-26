@@ -47,10 +47,10 @@ RUN pip install --upgrade pip && \
     else \
         pip install --no-build-isolation chatterbox-tts>=0.1.6; \
     fi && \
-    # Fix: Reinstall torch/torchvision from official PyTorch index (cu124)
+    # Fix: Reinstall torch/torchvision/torchaudio from official PyTorch index (cu124)
     # This ensures binary compatibility by using matching builds
-    # (pip-installed deps may have pulled incompatible torchvision from PyPI)
-    pip install --force-reinstall torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu124
+    # (pip-installed deps may have pulled incompatible versions from PyPI)
+    pip install --force-reinstall torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu124
 
 # Copy application code
 COPY app/ ./app/
