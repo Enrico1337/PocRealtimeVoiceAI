@@ -39,6 +39,7 @@ from .pipeline import RAGProcessor, InterruptionHandler, ResponseLogger
 from .rag import RAGService
 from .settings import Settings, get_settings, TransportMode
 from .telemetry import SessionMetrics, setup_logging
+from .text_utils import sanitize_for_tts
 from .transport import TransportFactory, TransportConfig, DailyRoomInfo
 from .transport.local import get_local_ice_servers, get_local_ice_servers_for_client
 from .events import event_manager
@@ -205,6 +206,11 @@ class SentenceAggregator(FrameProcessor):
 
     Collects text frames and generates TTS audio when sentence boundaries are detected.
     Includes error handling to prevent pipeline breakage on TTS failures.
+
+    Features:
+    - Text sanitization to prevent TTS gibberish
+    - Fallback chunking when buffer exceeds max length without sentence ending
+    - Comma-based chunking for more natural speech pauses
     """
 
     def __init__(self, tts_service: HTTPTTSService):
@@ -212,6 +218,10 @@ class SentenceAggregator(FrameProcessor):
         self.tts_service = tts_service
         self._buffer = ""
         self._sentence_endings = ".!?"
+        # Fallback settings to prevent long pauses
+        self._max_buffer_length = 150  # Fallback after 150 chars without sentence ending
+        self._chunk_on_comma = True    # Allow chunking at commas for natural pauses
+        self._min_chunk_length = 20    # Minimum chunk length before comma chunking
 
     async def _generate_tts_audio(self, text: str, direction: FrameDirection):
         """Generate TTS audio for text and push frames.
@@ -220,8 +230,21 @@ class SentenceAggregator(FrameProcessor):
             text: Text to synthesize
             direction: Frame direction for pushing frames
         """
+        if not text or not text.strip():
+            return
+
+        # Sanitize text for TTS to prevent gibberish
+        sanitized_text = sanitize_for_tts(text)
+
+        if not sanitized_text:
+            logger.debug(f"TTS skipped: text sanitized to empty string")
+            return
+
+        logger.debug(f"TTS input (raw): '{text[:100]}{'...' if len(text) > 100 else ''}'")
+        logger.debug(f"TTS input (sanitized): '{sanitized_text[:100]}{'...' if len(sanitized_text) > 100 else ''}'")
+
         try:
-            async for audio_chunk in self.tts_service.run_tts(text):
+            async for audio_chunk in self.tts_service.run_tts(sanitized_text):
                 audio_frame = TTSAudioRawFrame(
                     audio=audio_chunk,
                     sample_rate=self.tts_service.sample_rate,
@@ -229,8 +252,53 @@ class SentenceAggregator(FrameProcessor):
                 )
                 await self.push_frame(audio_frame, direction)
         except Exception as e:
-            logger.error(f"SentenceAggregator TTS error for '{text[:50]}...': {e}")
+            logger.error(f"SentenceAggregator TTS error for '{sanitized_text[:50]}...': {e}")
             # Don't re-raise - allow pipeline to continue without audio
+
+    def _find_chunk_boundary(self) -> int:
+        """Find the best position to chunk the buffer.
+
+        Returns:
+            Position to split at (exclusive), or -1 if no suitable boundary found
+        """
+        # First, try to find a sentence ending
+        end_pos = -1
+        for char in self._sentence_endings:
+            pos = self._buffer.find(char)
+            if pos != -1 and (end_pos == -1 or pos < end_pos):
+                end_pos = pos
+
+        if end_pos != -1:
+            return end_pos + 1  # Include the sentence ending
+
+        # If buffer exceeds max length, find fallback boundary
+        if len(self._buffer) >= self._max_buffer_length:
+            # Try comma first (for natural pauses in German)
+            if self._chunk_on_comma:
+                # Find last comma within the buffer
+                comma_pos = self._buffer.rfind(',', self._min_chunk_length, self._max_buffer_length)
+                if comma_pos != -1:
+                    logger.debug(f"Buffer overflow ({len(self._buffer)} chars), chunking at comma")
+                    return comma_pos + 1  # Include the comma
+
+            # Try semicolon or colon
+            for char in ';:':
+                pos = self._buffer.rfind(char, self._min_chunk_length, self._max_buffer_length)
+                if pos != -1:
+                    logger.debug(f"Buffer overflow ({len(self._buffer)} chars), chunking at '{char}'")
+                    return pos + 1
+
+            # Last resort: chunk at last space before max length
+            space_pos = self._buffer.rfind(' ', self._min_chunk_length, self._max_buffer_length)
+            if space_pos != -1:
+                logger.debug(f"Buffer overflow ({len(self._buffer)} chars), chunking at space")
+                return space_pos + 1
+
+            # Ultimate fallback: force chunk at max length
+            logger.warning(f"Buffer overflow ({len(self._buffer)} chars), forcing chunk at max length")
+            return self._max_buffer_length
+
+        return -1  # No suitable boundary found yet
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
@@ -238,24 +306,20 @@ class SentenceAggregator(FrameProcessor):
         if isinstance(frame, TextFrame) and frame.text:
             self._buffer += frame.text
 
-            # Check for sentence boundaries
+            # Process chunks while we have suitable boundaries
             while self._buffer:
-                # Find the first sentence ending
-                end_pos = -1
-                for char in self._sentence_endings:
-                    pos = self._buffer.find(char)
-                    if pos != -1 and (end_pos == -1 or pos < end_pos):
-                        end_pos = pos
+                chunk_pos = self._find_chunk_boundary()
 
-                if end_pos != -1:
-                    # Extract sentence
-                    sentence = self._buffer[:end_pos + 1].strip()
-                    self._buffer = self._buffer[end_pos + 1:].lstrip()
+                if chunk_pos > 0:
+                    # Extract chunk
+                    chunk = self._buffer[:chunk_pos].strip()
+                    self._buffer = self._buffer[chunk_pos:].lstrip()
 
-                    if sentence:
-                        # Generate TTS for this sentence
-                        await self._generate_tts_audio(sentence, direction)
+                    if chunk:
+                        # Generate TTS for this chunk
+                        await self._generate_tts_audio(chunk, direction)
                 else:
+                    # No suitable boundary found, wait for more text
                     break
 
         elif isinstance(frame, EndFrame):
