@@ -1,9 +1,10 @@
 """
-Orchestrator Main: FastAPI server with Pipecat WebRTC pipeline.
+Orchestrator Main: FastAPI server with Pipecat voice pipeline.
 
-Supports two transport modes:
+Supports three transport modes:
 - Daily Mode (default): Uses Daily.co for hosted WebRTC (works with vast.ai)
 - Local Mode: Uses SmallWebRTC for direct connections (for LAN/localhost)
+- Twilio Mode: Uses Twilio Media Streams for telephone calls
 """
 
 import asyncio
@@ -15,9 +16,9 @@ from pathlib import Path
 from typing import Optional
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
@@ -40,7 +41,7 @@ from .rag import RAGService
 from .settings import Settings, get_settings, TransportMode
 from .telemetry import SessionMetrics, setup_logging
 from .text_utils import sanitize_for_tts
-from .transport import TransportFactory, TransportConfig, DailyRoomInfo
+from .transport import TransportFactory, TransportConfig, DailyRoomInfo, TwilioCallInfo
 from .transport.local import get_local_ice_servers, get_local_ice_servers_for_client
 from .events import event_manager
 
@@ -497,6 +498,74 @@ async def run_daily_bot(room_info: DailyRoomInfo, session_id: str) -> None:
         logger.info(f"Session {session_id} ended")
 
 
+async def run_twilio_bot(
+    websocket: WebSocket,
+    call_info: TwilioCallInfo,
+    session_id: str,
+) -> None:
+    """Run the voice bot pipeline for a Twilio telephone call.
+
+    Uses FastAPIWebsocketTransport with TwilioFrameSerializer.
+    Twilio sends mu-law 8kHz audio; the serializer handles conversion.
+    """
+    global transport_factory
+
+    components = create_pipeline_components(session_id=session_id)
+    session_metrics = components["session_metrics"]
+    logger.info(
+        f"Starting Twilio session {session_id}: "
+        f"stream_sid={call_info.stream_sid}, call_sid={call_info.call_sid}"
+    )
+
+    await event_manager.emit_connection(session_id, "starting", {
+        "stream_sid": call_info.stream_sid,
+        "call_sid": call_info.call_sid,
+    })
+
+    try:
+        transport = transport_factory.create_twilio_transport(
+            websocket=websocket,
+            call_info=call_info,
+        )
+
+        # Build pipeline: Audio -> STT -> RAG -> LLM -> TTS -> Audio
+        pipeline = Pipeline([
+            transport.input(),
+            components["stt_service"],           # Transcribe audio to text
+            components["rag_processor"],         # Augment with RAG context
+            components["context_aggregator"].user(),
+            components["llm_service"],
+            components["response_logger"],       # Log responses BEFORE TTS conversion
+            components["sentence_aggregator"],   # Convert text to TTS audio
+            transport.output(),
+            components["context_aggregator"].assistant(),
+        ])
+
+        task = PipelineTask(
+            pipeline,
+            params=PipelineParams(
+                allow_interruptions=True,
+                enable_metrics=True,
+                audio_in_sample_rate=8000,
+                audio_out_sample_rate=8000,
+            )
+        )
+
+        await event_manager.emit_connection(session_id, "connected")
+
+        runner = PipelineRunner()
+        await runner.run(task)
+
+    except Exception as e:
+        logger.error(f"Twilio session {session_id} error: {e}", exc_info=True)
+        await event_manager.emit_error(session_id, str(e), "pipeline")
+    finally:
+        await components["sentence_aggregator"].cleanup()
+        session_metrics.log_summary()
+        await event_manager.emit_connection(session_id, "disconnected")
+        logger.info(f"Twilio session {session_id} ended")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
@@ -515,6 +584,9 @@ async def lifespan(app: FastAPI):
         daily_api_key=settings.daily_api_key,
         daily_bot_name=settings.daily_bot_name,
         daily_room_expiry=settings.daily_room_expiry_time,
+        twilio_account_sid=settings.twilio_account_sid,
+        twilio_auth_token=settings.twilio_auth_token,
+        twilio_phone_number=settings.twilio_phone_number,
     )
     transport_factory = TransportFactory(transport_config)
 
@@ -728,6 +800,91 @@ async def create_session():
 
 
 # =============================================================================
+# Twilio Mode Endpoints
+# =============================================================================
+
+@app.post("/api/twilio/incoming")
+async def twilio_incoming_call(request: Request):
+    """Handle incoming Twilio call with TwiML response.
+
+    Twilio calls this webhook when a call comes in.
+    Returns TwiML XML that tells Twilio to open a Media Stream WebSocket.
+    """
+    if not transport_factory or not transport_factory.is_twilio:
+        raise HTTPException(
+            status_code=400,
+            detail="Endpoint only available in Twilio mode. Set TRANSPORT_MODE=twilio"
+        )
+
+    # Determine WebSocket URL dynamically (ngrok-compatible)
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host", "localhost:7860")
+    # Use wss:// for forwarded (ngrok) connections, ws:// for direct
+    scheme = "wss" if request.headers.get("x-forwarded-proto") == "https" else "ws"
+    ws_url = f"{scheme}://{host}/ws/twilio"
+
+    logger.info(f"Twilio incoming call -> streaming to {ws_url}")
+
+    twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Connect>
+        <Stream url="{ws_url}" />
+    </Connect>
+</Response>"""
+
+    return Response(content=twiml, media_type="application/xml")
+
+
+@app.websocket("/ws/twilio")
+async def twilio_websocket(websocket: WebSocket):
+    """Handle Twilio Media Stream WebSocket connection.
+
+    Twilio connects here after receiving the TwiML <Stream> directive.
+    Parses initial messages to extract stream_sid and call_sid,
+    then starts the voice bot pipeline.
+    """
+    if not transport_factory or not transport_factory.is_twilio:
+        await websocket.close(code=1008, reason="Twilio mode not enabled")
+        return
+
+    await websocket.accept()
+    logger.info("Twilio WebSocket accepted")
+
+    stream_sid = None
+    call_sid = None
+
+    try:
+        # Parse initial Twilio handshake messages (connected + start events)
+        for _ in range(2):
+            data = await websocket.receive_text()
+            msg = json.loads(data)
+            event = msg.get("event")
+
+            if event == "connected":
+                logger.info("Twilio WebSocket: connected event received")
+            elif event == "start":
+                start_data = msg.get("start", {})
+                stream_sid = msg.get("streamSid", "")
+                call_sid = start_data.get("callSid", "")
+                logger.info(f"Twilio WebSocket: start event - stream_sid={stream_sid}, call_sid={call_sid}")
+
+        if not stream_sid:
+            logger.error("Twilio WebSocket: no streamSid received in handshake")
+            await websocket.close(code=1008, reason="Missing streamSid")
+            return
+
+        call_info = TwilioCallInfo(stream_sid=stream_sid, call_sid=call_sid or "")
+        session_id = f"twilio-{call_sid or stream_sid}"
+
+        # Run the bot pipeline (blocks until call ends)
+        await run_twilio_bot(websocket, call_info, session_id)
+
+    except WebSocketDisconnect:
+        logger.info("Twilio WebSocket disconnected")
+    except Exception as e:
+        logger.error(f"Twilio WebSocket error: {e}", exc_info=True)
+
+
+# =============================================================================
 # Local Mode Endpoints
 # =============================================================================
 
@@ -828,9 +985,11 @@ async def stream_events(session_id: str):
 
 @app.get("/", response_class=HTMLResponse)
 async def get_client():
-    """Serve the appropriate WebRTC client based on transport mode."""
+    """Serve the appropriate client based on transport mode."""
     if transport_factory and transport_factory.is_daily:
         client_file = CLIENTS_DIR / "daily_client.html"
+    elif transport_factory and transport_factory.is_twilio:
+        client_file = CLIENTS_DIR / "twilio_status.html"
     else:
         client_file = CLIENTS_DIR / "local_client.html"
 

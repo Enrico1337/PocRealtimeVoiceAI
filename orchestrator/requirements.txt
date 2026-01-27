@@ -7,7 +7,7 @@ python-multipart>=0.0.6
 # daily: Daily.co transport support
 # webrtc: SmallWebRTC for local mode
 # silero: VAD (Voice Activity Detection)
-pipecat-ai[daily,webrtc,silero]==0.0.99
+pipecat-ai[daily,webrtc,websocket,silero]==0.0.99
 opencv-python-headless
 onnxruntime
 

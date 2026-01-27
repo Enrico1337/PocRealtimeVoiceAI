@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Proof of Concept Voice AI - Twilio</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 2rem;
+            color: #fff;
+        }
+        .container {
+            text-align: center;
+            width: 100%;
+            max-width: 800px;
+        }
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+            color: #e94560;
+        }
+        .subtitle {
+            color: #8892b0;
+            margin-bottom: 1.5rem;
+        }
+        .mode-badge {
+            display: inline-block;
+            background: #4a4a6a;
+            color: #64b5f6;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            margin-bottom: 1rem;
+        }
+        .status {
+            background: rgba(255,255,255,0.1);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            text-align: left;
+        }
+        .status h2 {
+            font-size: 1.2rem;
+            margin-bottom: 1rem;
+            color: #64b5f6;
+        }
+        .status-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .status-row:last-child {
+            border-bottom: none;
+        }
+        .status-label {
+            color: #8892b0;
+            font-size: 0.9rem;
+        }
+        .status-value {
+            color: #fff;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+        }
+        .status-value.ok {
+            color: #4caf50;
+        }
+        .status-value.warn {
+            color: #ff9800;
+        }
+        .setup-steps {
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            text-align: left;
+        }
+        .setup-steps h2 {
+            font-size: 1.2rem;
+            margin-bottom: 1rem;
+            color: #64b5f6;
+        }
+        .setup-steps ol {
+            padding-left: 1.5rem;
+        }
+        .setup-steps li {
+            margin-bottom: 0.75rem;
+            color: #ccc;
+            line-height: 1.5;
+        }
+        .setup-steps code {
+            background: rgba(255,255,255,0.1);
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            color: #64b5f6;
+        }
+        .webhook-url {
+            background: rgba(100, 181, 246, 0.1);
+            border: 1px solid rgba(100, 181, 246, 0.3);
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 1rem 0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            word-break: break-all;
+            color: #64b5f6;
+        }
+        .refresh-btn {
+            background: #e94560;
+            color: #fff;
+            border: none;
+            padding: 0.5rem 1.5rem;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            margin-top: 1rem;
+        }
+        .refresh-btn:hover {
+            background: #c73e54;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Proof of Concept Voice AI</h1>
+        <p class="subtitle">Self-hosted Voice Assistant</p>
+        <span class="mode-badge">Twilio Telephony</span>
+
+        <div class="status">
+            <h2>Service Status</h2>
+            <div class="status-row">
+                <span class="status-label">Transport Mode</span>
+                <span class="status-value">Twilio</span>
+            </div>
+            <div class="status-row">
+                <span class="status-label">Orchestrator</span>
+                <span class="status-value" id="orchestrator-status">Checking...</span>
+            </div>
+            <div class="status-row">
+                <span class="status-label">RAG Service</span>
+                <span class="status-value" id="rag-status">Checking...</span>
+            </div>
+            <div class="status-row">
+                <span class="status-label">Webhook Endpoint</span>
+                <span class="status-value" id="webhook-status">--</span>
+            </div>
+        </div>
+
+        <div class="status">
+            <h2>Webhook URL</h2>
+            <p style="color: #8892b0; margin-bottom: 0.5rem; font-size: 0.9rem;">
+                Configure this URL in your Twilio Console as the Voice webhook:
+            </p>
+            <div class="webhook-url" id="webhook-url">
+                Loading...
+            </div>
+            <p style="color: #8892b0; font-size: 0.8rem;">
+                If using ngrok, replace the hostname with your ngrok URL.
+            </p>
+        </div>
+
+        <div class="setup-steps">
+            <h2>Setup-Anleitung</h2>
+            <ol>
+                <li>
+                    Stelle sicher, dass <code>TWILIO_ACCOUNT_SID</code>,
+                    <code>TWILIO_AUTH_TOKEN</code> und <code>TWILIO_PHONE_NUMBER</code>
+                    in der <code>.env</code> Datei gesetzt sind.
+                </li>
+                <li>
+                    Starte einen Tunnel (z.B. ngrok):
+                    <code>ngrok http 7860</code>
+                </li>
+                <li>
+                    Gehe zur
+                    <a href="https://console.twilio.com/us1/develop/phone-numbers/manage/incoming" target="_blank" style="color: #64b5f6;">
+                        Twilio Console
+                    </a>
+                    &rarr; Phone Numbers &rarr; Active Numbers.
+                </li>
+                <li>
+                    Unter "A call comes in" &rarr; Webhook &rarr;
+                    <code>https://&lt;ngrok-url&gt;/api/twilio/incoming</code> (HTTP POST)
+                </li>
+                <li>
+                    Rufe die Twilio-Nummer an. Der Voice Agent antwortet per Telefon.
+                </li>
+            </ol>
+        </div>
+
+        <button class="refresh-btn" onclick="checkStatus()">Status aktualisieren</button>
+    </div>
+
+    <script>
+        async function checkStatus() {
+            // Check orchestrator health
+            try {
+                const res = await fetch('/health');
+                const data = await res.json();
+                const el = document.getElementById('orchestrator-status');
+                if (data.status === 'healthy') {
+                    el.textContent = 'Healthy';
+                    el.className = 'status-value ok';
+                } else {
+                    el.textContent = 'Unhealthy';
+                    el.className = 'status-value warn';
+                }
+
+                const ragEl = document.getElementById('rag-status');
+                if (data.rag_initialized) {
+                    ragEl.textContent = 'Initialized';
+                    ragEl.className = 'status-value ok';
+                } else {
+                    ragEl.textContent = 'Not initialized';
+                    ragEl.className = 'status-value warn';
+                }
+            } catch (e) {
+                document.getElementById('orchestrator-status').textContent = 'Error';
+                document.getElementById('orchestrator-status').className = 'status-value warn';
+            }
+
+            // Show webhook URL
+            const proto = window.location.protocol === 'https:' ? 'https' : 'http';
+            const webhookUrl = `${proto}://${window.location.host}/api/twilio/incoming`;
+            document.getElementById('webhook-url').textContent = webhookUrl;
+            document.getElementById('webhook-status').textContent = '/api/twilio/incoming';
+            document.getElementById('webhook-status').className = 'status-value ok';
+        }
+
+        // Check on load
+        checkStatus();
+    </script>
+</body>
+</html>

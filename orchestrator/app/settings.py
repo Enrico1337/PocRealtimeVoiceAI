@@ -10,9 +10,10 @@ from pydantic import Field
 
 
 class TransportMode(str, Enum):
-    """Transport mode for WebRTC."""
+    """Transport mode for WebRTC or telephony."""
     DAILY = "daily"
     LOCAL = "local"
+    TWILIO = "twilio"
 
 
 class Settings(BaseSettings):
@@ -23,7 +24,7 @@ class Settings(BaseSettings):
     # =========================================================================
     transport_mode: TransportMode = Field(
         default=TransportMode.DAILY,
-        description="'daily' for Daily.co hosted WebRTC or 'local' for SmallWebRTC"
+        description="'daily' for Daily.co hosted WebRTC, 'local' for SmallWebRTC, or 'twilio' for Twilio telephony"
     )
 
     # =========================================================================
@@ -40,6 +41,22 @@ class Settings(BaseSettings):
     daily_room_expiry_time: int = Field(
         default=3600,
         description="Room expiry time in seconds"
+    )
+
+    # =========================================================================
+    # Twilio Configuration (only used when transport_mode=twilio)
+    # =========================================================================
+    twilio_account_sid: str = Field(
+        default="",
+        description="Twilio Account SID (from https://console.twilio.com)"
+    )
+    twilio_auth_token: str = Field(
+        default="",
+        description="Twilio Auth Token"
+    )
+    twilio_phone_number: str = Field(
+        default="",
+        description="Twilio phone number (E.164 format, e.g. +1234567890)"
     )
 
     # =========================================================================

@@ -149,6 +149,10 @@ services:
       - DAILY_API_KEY=${DAILY_API_KEY:-}
       - DAILY_BOT_NAME=${DAILY_BOT_NAME:-Voice Assistant}
       - DAILY_ROOM_EXPIRY_TIME=${DAILY_ROOM_EXPIRY_TIME:-3600}
+      # Twilio config (only needed when TRANSPORT_MODE=twilio)
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID:-}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN:-}
+      - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER:-}
     volumes:
       - ./kb:/app/kb:ro
       - hf-cache:/root/.cache/huggingface
@@ -179,3 +183,16 @@ services:
     container_name: poc-test
     command: ["python", "test_imports.py"]
     profiles: ["test"]
+
+  # =============================================================================
+  # NGROK - Tunnel for Twilio (optional)
+  # Usage: docker-compose --profile twilio up ngrok
+  # =============================================================================
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: poc-ngrok
+    network_mode: host
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN:-}
+    command: http 7860
+    profiles: ["twilio"]
