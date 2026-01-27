@@ -186,7 +186,8 @@ services:
 
   # =============================================================================
   # NGROK - Tunnel for Twilio (optional)
-  # Usage: docker-compose --profile twilio up ngrok
+  # Auto-starts with: COMPOSE_PROFILES=twilio in .env
+  # Or manually: docker compose --profile twilio up ngrok
   # =============================================================================
   ngrok:
     image: ngrok/ngrok:latest

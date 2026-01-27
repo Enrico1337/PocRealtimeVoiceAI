@@ -4,10 +4,11 @@ Self-hosted Proof-of-Concept for a realtime voice assistant with:
 - **STT**: faster-whisper (OpenAI-compatible API)
 - **LLM**: vLLM with Qwen3-30B-A3B (AWQ quantized)
 - **RAG**: Qdrant + BGE-M3 embeddings
-- **TTS**: Chatterbox Turbo
+- **TTS**: Coqui XTTS-v2 / Chatterbox
 
 ```
 Browser (WebRTC) → STT → LLM (+RAG) → TTS → Browser
+Telefon → Twilio → Orchestrator → STT → LLM (+RAG) → TTS → Twilio → Telefon
 ```
 
 ## 5-Minute Quickstart
@@ -34,7 +35,7 @@ cp .env.example .env
 
 ```bash
 # Build and start with GPU support
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+docker compose -f docker-compose.yml -f docker-compose.vast.yml up --build
 ```
 
 Or use the Makefile:
@@ -52,12 +53,18 @@ Click "Connect" and start speaking!
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         Browser                                 │
-│                    (WebRTC Client)                              │
-└───────────────────────┬─────────────────────────────────────────┘
-                        │ WebRTC
-                        ▼
+┌───────────────┐     ┌───────────────────┐
+│    Browser    │     │     Telefon       │
+│ (WebRTC)      │     │  (Twilio PSTN)    │
+└───────┬───────┘     └────────┬──────────┘
+        │ WebRTC               │ Media Streams
+        │                      ▼
+        │              ┌──────────────┐
+        │              │    Twilio    │
+        │              │  + ngrok    │
+        │              └──────┬───────┘
+        │                     │ WebSocket
+        ▼                     ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                     Orchestrator                                │
 │                   (Pipecat Pipeline)                            │
@@ -68,9 +75,10 @@ Click "Connect" and start speaking!
         │             │             │             │
         ▼             ▼             ▼             ▼
    ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐
-   │ Silero  │   │ faster- │   │  vLLM   │   │Chatter- │
-   │  VAD    │   │ whisper │   │ +Qdrant │   │  box    │
-   └─────────┘   └─────────┘   └─────────┘   └─────────┘
+   │ Silero  │   │ faster- │   │  vLLM   │   │  Coqui/ │
+   │  VAD    │   │ whisper │   │ +Qdrant │   │Chatter- │
+   └─────────┘   └─────────┘   └─────────┘   │  box    │
+                                              └─────────┘
 ```
 
 ## Services
@@ -103,7 +111,7 @@ LLM_MAX_CONTEXT=32768       # Context window
 LLM_GPU_MEMORY=0.85         # GPU memory utilization
 
 # Transport Mode
-TRANSPORT_MODE=daily        # "daily" (default) or "local"
+TRANSPORT_MODE=daily        # "daily" (default), "local", or "twilio"
 DAILY_API_KEY=              # Required for cloud deployment (vast.ai)
 ```
 
@@ -136,8 +144,60 @@ With Daily.co transport, cloud deployment requires only port 7860 (no TURN serve
    DAILY_API_KEY=your-api-key
    ```
 4. Expose port `7860/http` in vast.ai console
-5. Start: `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d`
+5. Start: `docker compose -f docker-compose.yml -f docker-compose.vast.yml up -d`
 6. Access via the vast.ai assigned URL
+
+## Twilio Telefon-Modus
+
+Der Voice Agent ist auch per Telefon erreichbar. Twilio leitet eingehende Anrufe als WebSocket-Stream an den Orchestrator weiter.
+
+### Voraussetzungen
+
+- [Twilio Account](https://console.twilio.com) mit Telefonnummer
+- [ngrok Account](https://ngrok.com) (kostenlos reicht) für den Tunnel
+
+### 1. Konfiguration (.env)
+
+```bash
+# Transport
+TRANSPORT_MODE=twilio
+
+# Twilio Credentials (von https://console.twilio.com)
+TWILIO_ACCOUNT_SID=ACxxxxxxxxxx
+TWILIO_AUTH_TOKEN=xxxxxxxxxx
+TWILIO_PHONE_NUMBER=+1234567890
+
+# ngrok
+NGROK_AUTHTOKEN=your-ngrok-token
+
+# ngrok automatisch mit docker compose up starten
+COMPOSE_PROFILES=twilio
+```
+
+### 2. Starten
+
+```bash
+docker compose up -d
+```
+
+ngrok startet automatisch mit (dank `COMPOSE_PROFILES=twilio`). Die Webhook-URL wird im Orchestrator-Log angezeigt:
+
+```bash
+docker compose logs orchestrator | grep "webhook"
+# Ausgabe: Twilio webhook URL: https://xxxx.ngrok-free.app/api/twilio/incoming
+```
+
+### 3. Twilio Console konfigurieren
+
+1. Gehe zu [Phone Numbers > Active Numbers](https://console.twilio.com/us1/develop/phone-numbers/manage/incoming)
+2. Wähle deine Nummer
+3. Unter **Voice Configuration > A call comes in**: Webhook, HTTP POST
+4. URL: `https://xxxx.ngrok-free.app/api/twilio/incoming` (aus dem Log)
+5. Speichern
+
+### 4. Testen
+
+Rufe die Twilio-Nummer an. Du solltest zuerst eine Begrüßung hören, danach kannst du mit dem KI-Agent sprechen.
 
 ## vast.ai Multi-GPU Deployment
 

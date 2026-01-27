@@ -607,6 +607,31 @@ async def lifespan(app: FastAPI):
     logger.info(f"Orchestrator ready on http://{settings.host}:{settings.port}")
     logger.info(f"Transport mode: {settings.transport_mode.value}")
 
+    # Twilio: detect ngrok tunnel URL
+    if transport_factory.is_twilio:
+        import aiohttp
+        ngrok_url = None
+        for attempt in range(3):
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(
+                        "http://localhost:4040/api/tunnels",
+                        timeout=aiohttp.ClientTimeout(total=3),
+                    ) as resp:
+                        data = await resp.json()
+                        tunnels = data.get("tunnels", [])
+                        if tunnels:
+                            ngrok_url = tunnels[0]["public_url"]
+                            break
+            except Exception:
+                if attempt < 2:
+                    await asyncio.sleep(2)
+        if ngrok_url:
+            logger.info(f"ngrok tunnel active: {ngrok_url}")
+            logger.info(f"Twilio webhook URL: {ngrok_url}/api/twilio/incoming")
+        else:
+            logger.warning("ngrok not detected - configure Twilio webhook URL manually")
+
     yield
 
     # Shutdown
@@ -826,6 +851,7 @@ async def twilio_incoming_call(request: Request):
 
     twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
+    <Say language="de-DE">Hallo, hier ist der Demo KI-Agent für behördliche Anfragen. Was kann ich für Sie tun?</Say>
     <Connect>
         <Stream url="{ws_url}" />
     </Connect>
